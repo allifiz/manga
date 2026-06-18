@@ -8,6 +8,7 @@ interface MangaItem {
   id: string;
   title: string;
   cover: string;
+  type?: string; 
   chapters: { number: string; time: string; url: string }[];
   rating?: string;
   isNew?: boolean;
