@@ -54,7 +54,6 @@ export default function Home() {
   useEffect(() => {
     setLatestLoading(true);
     const params = new URLSearchParams({
-      orderby: "date",
       halaman: latestPage.toString(),
     });
 
