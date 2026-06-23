@@ -123,14 +123,18 @@ function cleanMeta(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function normalizeFilterValue(value?: string): string | undefined {
+function normalizeFilterValue(value?: string | null): string | undefined {
   if (!value) return undefined;
-  return value
+  const clean = value
     .replace(BASE_URL, "")
     .replace(/^\/+/, "")
     .replace(/\/+$/, "")
     .replace(/^genre\//, "")
     .toLowerCase();
+
+  if (!clean || clean === "all" || clean === "semua") return undefined;
+  if (clean === "end") return "tamat";
+  return clean;
 }
 
 function getImageSrc($: cheerio.CheerioAPI, el: any): string {
@@ -215,11 +219,12 @@ function parseMangaItem($: cheerio.CheerioAPI, el: any): MangaItem | null {
     rating: $el.find(".rating, .nilai").first().text().trim() || undefined,
     isNew: $el.find(".up, .new, .hot").length > 0,
     type: meta.match(/\b(Manga|Manhwa|Manhua)\b/i)?.[1],
-    status: metaLower.includes("tamat") || metaLower.includes("end")
-      ? "Tamat"
-      : metaLower.includes("ongoing")
-        ? "Ongoing"
-        : undefined,
+    status:
+      metaLower.includes("tamat") || metaLower.includes("status: end") || /\bend\b/i.test(meta)
+        ? "Tamat"
+        : metaLower.includes("ongoing")
+          ? "Ongoing"
+          : undefined,
   };
 }
 
@@ -432,55 +437,52 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
   }
 }
 
-function buildQuery(filters: MangaListFilters, includePage = true): string {
-  const page = filters.halaman || 1;
+function buildFilterParams(filters: MangaListFilters, omit: string[] = []): string {
   const params = new URLSearchParams();
   const tipe = normalizeFilterValue(filters.tipe);
-  const genre = normalizeFilterValue(filters.genre);
   const genre2 = normalizeFilterValue(filters.genre2);
   const status = normalizeFilterValue(filters.status);
   const orderby = normalizeFilterValue(filters.orderby);
 
-  if (tipe) params.set("tipe", tipe);
-  if (genre) params.set("genre", genre);
-  if (genre2) params.set("genre2", genre2);
-  if (status) params.set("status", status === "end" ? "tamat" : status);
-  if (orderby) params.set("orderby", orderby);
-  if (includePage && page > 1) params.set("halaman", page.toString());
+  if (tipe && !omit.includes("tipe")) params.set("tipe", tipe);
+  if (genre2 && !omit.includes("genre2")) params.set("genre2", genre2);
+  if (status && !omit.includes("status")) params.set("status", status);
+  if (orderby && !omit.includes("orderby")) params.set("orderby", orderby);
+
+  return params.toString();
+}
+
+function buildPagedPath(basePath: string, page: number, query = ""): string {
+  const cleanBase = basePath.endsWith("/") ? basePath : `${basePath}/`;
+  const path = page > 1 ? `${cleanBase}page/${page}/` : cleanBase;
+  return query ? `${path}?${query}` : path;
+}
+
+function buildSearchQuery(query: string): string {
+  const params = new URLSearchParams();
+  params.set("post_type", "manga");
+  params.set("s", query);
   return params.toString();
 }
 
 function getListUrls(filters: MangaListFilters): string[] {
   const page = filters.halaman || 1;
-  const tipe = normalizeFilterValue(filters.tipe);
+  const search = filters.s?.trim();
   const genre = normalizeFilterValue(filters.genre);
-  const query = buildQuery(filters);
-  const noPageQuery = buildQuery(filters, false);
-  const urls: string[] = [];
+  const query = buildFilterParams(filters, genre ? ["genre"] : []);
 
-  if (filters.s) {
-    const searchParams = new URLSearchParams({ s: filters.s, post_type: "manga" });
-    if (page > 1) searchParams.set("page", page.toString());
-    urls.push(`/?${searchParams.toString()}`);
-    urls.push(`/page/${page}/?${searchParams.toString()}`);
+  if (search) {
+    const searchQuery = buildSearchQuery(search);
+    return page > 1
+      ? [`/page/${page}/?${searchQuery}`, `/?${searchQuery}&paged=${page}`]
+      : [`/?${searchQuery}`];
   }
 
   if (genre) {
-    const genreQuery = new URLSearchParams(noPageQuery);
-    genreQuery.delete("genre");
-    const genreSuffix = genreQuery.toString();
-    urls.push(page > 1 ? `/genre/${genre}/page/${page}/${genreSuffix ? `?${genreSuffix}` : ""}` : `/genre/${genre}/${genreSuffix ? `?${genreSuffix}` : ""}`);
+    return [buildPagedPath(`/genre/${genre}/`, page, query)];
   }
 
-  if (tipe) {
-    urls.push(page > 1 ? `/daftar-komik/page/${page}/?${noPageQuery}` : `/daftar-komik/?${noPageQuery}`);
-  }
-
-  urls.push(`/daftar-komik/${query ? `?${query}` : ""}`);
-  if (page > 1) urls.push(`/daftar-komik/page/${page}/${noPageQuery ? `?${noPageQuery}` : ""}`);
-  urls.push(`/pustaka/${query ? `?${query}` : ""}`);
-
-  return Array.from(new Set(urls.filter(Boolean)));
+  return [buildPagedPath("/daftar-komik/", page, query)];
 }
 
 function parsePagination($: cheerio.CheerioAPI, currentPage: number) {
@@ -503,6 +505,19 @@ function parsePagination($: cheerio.CheerioAPI, currentPage: number) {
     hasNextPage,
     hasPrevPage: currentPage > 1,
   };
+}
+
+function itemMatchesFilters(item: MangaItem, filters: MangaListFilters): boolean {
+  const tipe = normalizeFilterValue(filters.tipe);
+  const status = normalizeFilterValue(filters.status);
+
+  if (tipe && item.type && item.type.toLowerCase() !== tipe) return false;
+  if (status && item.status) {
+    const itemStatus = item.status.toLowerCase() === "end" ? "tamat" : item.status.toLowerCase();
+    if (itemStatus !== status) return false;
+  }
+
+  return true;
 }
 
 export async function searchManga(query: string, page = 1): Promise<SearchResult[]> {
@@ -530,7 +545,8 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
     for (const url of getListUrls(filters)) {
       const { data: html } = await api.get(url);
       const $ = cheerio.load(html);
-      const manga = parseMangaItems($);
+      const parsed = parseMangaItems($);
+      const manga = parsed.filter((item) => itemMatchesFilters(item, filters));
       lastPagination = parsePagination($, currentPage);
 
       if (manga.length > 0) {
@@ -553,14 +569,14 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
 
 export async function getGenreList(): Promise<{ name: string; slug: string }[]> {
   try {
-    const { data: html } = await api.get("/pustaka/");
+    const { data: html } = await api.get("/genre/action/");
     const $ = cheerio.load(html);
     const genres: { name: string; slug: string }[] = [];
     const seen = new Set<string>();
 
-    $("select[name='genre'] option, a[href*='/genre/']").each((_, el) => {
+    $("a[href*='/genre/']").each((_, el) => {
       const rawName = $(el).text().replace(/\([\d.]+\)/, "").trim();
-      const rawValue = $(el).attr("value") || $(el).attr("href") || "";
+      const rawValue = $(el).attr("href") || "";
       const value = normalizeFilterValue(rawValue) || "";
       if (rawName && value && !seen.has(value) && !/^genre\s*\d*$/i.test(rawName)) {
         seen.add(value);
