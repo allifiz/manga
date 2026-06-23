@@ -3,20 +3,6 @@ import axios, { AxiosInstance } from "axios";
 const API_BASE_URL = "https://komiku-rest-api.vercel.app";
 const KOMIKU_BASE_URL = "https://komiku.org";
 
-function createClient(baseURL: string): AxiosInstance {
-  return axios.create({
-    baseURL,
-    timeout: 20000,
-    headers: {
-      Accept: "application/json",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    },
-  });
-}
-
-const api = createClient(API_BASE_URL);
-
 export interface MangaItem {
   id: string;
   title: string;
@@ -92,9 +78,28 @@ export interface MangaListResponse {
 }
 
 type ApiRecord = Record<string, unknown>;
+type DetailChapter = MangaDetail["chapters"][number];
+
+function createClient(baseURL: string): AxiosInstance {
+  return axios.create({
+    baseURL,
+    timeout: 20000,
+    headers: {
+      Accept: "application/json",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    },
+  });
+}
+
+const api = createClient(API_BASE_URL);
 
 function isRecord(value: unknown): value is ApiRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined;
 }
 
 function asString(value: unknown): string {
@@ -103,6 +108,18 @@ function asString(value: unknown): string {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function firstString(record: ApiRecord, keys: string[]): string {
+  for (const key of keys) {
+    const value = asString(record[key]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function slugToTitle(slug: string): string {
+  return slug.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function resolveKomikuUrl(url?: string): string {
@@ -126,10 +143,6 @@ function resolveApiPath(path?: string): string {
     }
   }
   return clean.startsWith("/") ? clean : `/${clean}`;
-}
-
-function slugToTitle(slug: string): string {
-  return slug.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function normalizeSlug(value?: unknown): string {
@@ -176,20 +189,11 @@ function uniqueById<T extends { id: string; title?: string }>(items: T[]): T[] {
   });
 }
 
-function firstString(record: ApiRecord, keys: string[]): string {
-  for (const key of keys) {
-    const value = asString(record[key]);
-    if (value) return value;
-  }
-  return "";
-}
-
 function pickItems(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
   if (!isRecord(payload)) return [];
 
-  const directKeys = ["data", "results", "items", "manga"];
-  for (const key of directKeys) {
+  for (const key of ["data", "results", "items", "manga"]) {
     const value = payload[key];
     if (Array.isArray(value)) return value;
     if (isRecord(value)) {
@@ -199,6 +203,11 @@ function pickItems(payload: unknown): unknown[] {
   }
 
   return [];
+}
+
+async function apiGet<T = unknown>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+  const { data } = await api.get<T>(path, { params });
+  return data;
 }
 
 function chapterFromApi(value: unknown): { number: string; time: string; url: string } | null {
@@ -220,9 +229,7 @@ function chaptersFromApi(record: ApiRecord): { number: string; time: string; url
   if (latestObject) chapters.push(latestObject);
 
   const firstObject = chapterFromApi(record.firstChapter);
-  if (firstObject && !chapters.some((chapter) => chapter.url === firstObject.url)) {
-    chapters.push(firstObject);
-  }
+  if (firstObject && !chapters.some((chapter) => chapter.url === firstObject.url)) chapters.push(firstObject);
 
   const latestTitle = firstString(record, ["latestChapterTitle", "latestChapter", "chapter"]);
   const latestUrl = firstString(record, ["apiChapterLink", "latestChapterLink", "chapterLink"]);
@@ -270,12 +277,7 @@ function mangaItemFromApi(value: unknown): MangaItem | null {
 }
 
 function mapApiItems(payload: unknown, limit = 10): MangaItem[] {
-  return uniqueById(pickItems(payload).map(mangaItemFromApi).filter((item): item is MangaItem => Boolean(item))).slice(0, limit);
-}
-
-async function apiGet<T = unknown>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
-  const { data } = await api.get<T>(path, { params });
-  return data;
+  return uniqueById(pickItems(payload).map(mangaItemFromApi).filter(isPresent)).slice(0, limit);
 }
 
 function getFallbackData(): HomePageData {
@@ -308,11 +310,7 @@ function flattenPopular(payload: unknown): MangaItem[] {
 
 export async function getHomePage(): Promise<HomePageData> {
   try {
-    const [terbaru, rekomendasi, populer] = await Promise.allSettled([
-      apiGet("/terbaru"),
-      apiGet("/rekomendasi"),
-      apiGet("/komik-populer"),
-    ]);
+    const [terbaru, rekomendasi, populer] = await Promise.allSettled([apiGet("/terbaru"), apiGet("/rekomendasi"), apiGet("/komik-populer")]);
 
     const updates = terbaru.status === "fulfilled" ? mapApiItems(terbaru.value) : [];
     const recommendations = rekomendasi.status === "fulfilled" ? mapApiItems(rekomendasi.value, 6) : [];
@@ -341,8 +339,7 @@ function detailInfoValue(info: unknown, labels: string[]): string {
     if (direct) return direct;
   }
 
-  const entries = Object.entries(info);
-  const found = entries.find(([key]) => labels.some((label) => key.toLowerCase().includes(label.toLowerCase())));
+  const found = Object.entries(info).find(([key]) => labels.some((label) => key.toLowerCase().includes(label.toLowerCase())));
   return found ? asString(found[1]) : "";
 }
 
@@ -357,12 +354,12 @@ function detailGenres(payload: ApiRecord): { name: string; slug: string }[] {
       }
       return null;
     })
-    .filter((genre): genre is { name: string; slug: string } => Boolean(genre));
+    .filter(isPresent);
 }
 
 function detailChapters(payload: ApiRecord): MangaDetail["chapters"] {
-  return asArray(payload.chapters)
-    .map((chapter, index) => {
+  const chapters: DetailChapter[] = asArray(payload.chapters)
+    .map((chapter, index): DetailChapter | null => {
       if (!isRecord(chapter)) return null;
       const title = firstString(chapter, ["title", "name", "chapterTitle"]);
       const url = firstString(chapter, ["apiLink", "apiChapterLink", "url", "href", "link"]);
@@ -373,7 +370,9 @@ function detailChapters(payload: ApiRecord): MangaDetail["chapters"] {
         isNew: index < 3,
       };
     })
-    .filter((chapter): chapter is MangaDetail["chapters"][number] => Boolean(chapter));
+    .filter(isPresent);
+
+  return chapters;
 }
 
 export async function getMangaDetail(slug: string): Promise<MangaDetail | null> {
@@ -449,7 +448,7 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
         if (isRecord(image)) return firstString(image, ["src", "url", "image", "fallbackSrc"]);
         return "";
       })
-      .filter(Boolean);
+      .filter((image): image is string => Boolean(image));
 
     const navigation: ApiRecord = isRecord(payload.navigation) ? payload.navigation : {};
     const mangaInfo: ApiRecord = isRecord(payload.mangaInfo) ? payload.mangaInfo : {};
@@ -632,7 +631,7 @@ export async function getGenreList(): Promise<{ name: string; slug: string }[]> 
         const slug = normalizeSlug(item.slug) || normalizeFilterValue(firstString(item, ["apiGenreLink", "originalLink", "readLink"])) || normalizeGenreText(name);
         return name && slug ? { name, slug } : null;
       })
-      .filter((genre): genre is { name: string; slug: string } => Boolean(genre));
+      .filter(isPresent);
   } catch (error: unknown) {
     console.error("Error fetching genre list from Komiku API:", error);
     return [];
