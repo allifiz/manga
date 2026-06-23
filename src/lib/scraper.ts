@@ -269,8 +269,8 @@ function mangaItemFromApi(value: unknown): MangaItem | null {
   };
 }
 
-function mapApiItems(payload: unknown): MangaItem[] {
-  return uniqueById(pickItems(payload).map(mangaItemFromApi).filter((item): item is MangaItem => Boolean(item))).slice(0, 10);
+function mapApiItems(payload: unknown, limit = 10): MangaItem[] {
+  return uniqueById(pickItems(payload).map(mangaItemFromApi).filter((item): item is MangaItem => Boolean(item))).slice(0, limit);
 }
 
 async function apiGet<T = unknown>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
@@ -300,9 +300,9 @@ function getFallbackData(): HomePageData {
 }
 
 function flattenPopular(payload: unknown): MangaItem[] {
-  if (!isRecord(payload)) return mapApiItems(payload);
+  if (!isRecord(payload)) return mapApiItems(payload, 12);
   const groups = [payload.manga, payload.manhwa, payload.manhua];
-  const items = groups.flatMap((group) => mapApiItems(group));
+  const items = groups.flatMap((group) => mapApiItems(group, 12));
   return uniqueById(items).slice(0, 12);
 }
 
@@ -315,7 +315,7 @@ export async function getHomePage(): Promise<HomePageData> {
     ]);
 
     const updates = terbaru.status === "fulfilled" ? mapApiItems(terbaru.value) : [];
-    const recommendations = rekomendasi.status === "fulfilled" ? mapApiItems(rekomendasi.value) : [];
+    const recommendations = rekomendasi.status === "fulfilled" ? mapApiItems(rekomendasi.value, 6) : [];
     const popular = populer.status === "fulfilled" ? flattenPopular(populer.value) : [];
     const featured = recommendations.length > 0 ? recommendations.slice(0, 3) : popular.slice(0, 3);
 
@@ -451,8 +451,8 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
       })
       .filter(Boolean);
 
-    const navigation = isRecord(payload.navigation) ? payload.navigation : {};
-    const mangaInfo = isRecord(payload.mangaInfo) ? payload.mangaInfo : {};
+    const navigation: ApiRecord = isRecord(payload.navigation) ? payload.navigation : {};
+    const mangaInfo: ApiRecord = isRecord(payload.mangaInfo) ? payload.mangaInfo : {};
 
     return {
       title: firstString(payload, ["title", "chapterTitle"]),
@@ -570,7 +570,7 @@ async function getPustakaPage(filters: MangaListFilters, page: number): Promise<
 
 export async function searchManga(query: string, page = 1): Promise<SearchResult[]> {
   const payload = await apiGet("/search", { q: query });
-  const all = mapApiItems(payload);
+  const all = mapApiItems(payload, 50);
   const start = Math.max(0, (page - 1) * 10);
 
   return all.slice(start, start + 10).map((item) => ({
