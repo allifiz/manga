@@ -79,6 +79,7 @@ export interface MangaListResponse {
 }
 
 type ApiRecord = Record<string, unknown>;
+type DetailChapter = MangaDetail["chapters"][number];
 
 interface ApiEnvelope<T> {
   status?: number;
@@ -249,6 +250,10 @@ function chapterPreviewFromApi(mangaSlug: string, chapter: KomikcastChapter): { 
   };
 }
 
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined;
+}
+
 function genresFromSeries(item: KomikcastSeriesItem): string[] {
   return (item.data?.genres || [])
     .map((genre) => genre.data?.name || "")
@@ -265,7 +270,7 @@ function mangaItemFromSeries(item: KomikcastSeriesItem): MangaItem | null {
 
   const chapters = (item.chapters || [])
     .map((chapter) => chapterPreviewFromApi(slug, chapter))
-    .filter((chapter): chapter is { number: string; time: string; url: string } => Boolean(chapter))
+    .filter(isPresent)
     .slice(0, 3);
 
   return {
@@ -286,7 +291,7 @@ function mapSeriesItems(items: unknown, limit = PAGE_SIZE): MangaItem[] {
   return uniqueById(
     items
       .map((item) => (isRecord(item) ? mangaItemFromSeries(item as unknown as KomikcastSeriesItem) : null))
-      .filter((item): item is MangaItem => Boolean(item)),
+      .filter(isPresent),
   ).slice(0, limit);
 }
 
@@ -376,14 +381,14 @@ function genreObjects(item: KomikcastSeriesItem): { name: string; slug: string }
       const name = genre.data?.name || "";
       return name ? { name, slug: slugify(name) } : null;
     })
-    .filter((genre): genre is { name: string; slug: string } => Boolean(genre));
+    .filter(isPresent);
 }
 
 function detailChapters(slug: string, chapters: KomikcastChapter[]): MangaDetail["chapters"] {
   return chapters
     .slice()
     .sort((a, b) => (b.data?.index ?? b.chapterIndex ?? 0) - (a.data?.index ?? a.chapterIndex ?? 0))
-    .map((chapter, index) => {
+    .map<DetailChapter | null>((chapter, index) => {
       const chapterIndex = chapter.data?.index ?? chapter.chapterIndex;
       if (chapterIndex === undefined || chapterIndex === null) return null;
 
@@ -394,7 +399,7 @@ function detailChapters(slug: string, chapters: KomikcastChapter[]): MangaDetail
         isNew: index < 3,
       };
     })
-    .filter((chapter): chapter is MangaDetail["chapters"][number] => Boolean(chapter));
+    .filter(isPresent);
 }
 
 export async function getMangaDetail(slug: string): Promise<MangaDetail | null> {
@@ -578,7 +583,7 @@ export async function getGenreList(): Promise<{ name: string; slug: string }[]> 
         const name = genre.data?.name || "";
         return name ? { name, slug: slugify(name) } : null;
       })
-      .filter((genre): genre is { name: string; slug: string } => Boolean(genre));
+      .filter(isPresent);
   } catch (error) {
     console.error("Error fetching genre list from Komikcast API:", error);
     return [];
