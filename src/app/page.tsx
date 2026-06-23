@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import MangaCard from "@/components/MangaCard";
 
 interface MangaItem {
@@ -20,6 +20,16 @@ interface HomeData {
   popular: MangaItem[];
 }
 
+function uniqueManga(items: MangaItem[] = []) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = item.id || item.title;
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export default function Home() {
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,26 +46,35 @@ export default function Home() {
       .catch(() => setLoading(false));
   }, []);
 
+  const safeData = useMemo<HomeData | null>(() => {
+    if (!data) return null;
+
+    return {
+      featured: uniqueManga(data.featured).slice(0, 3),
+      recommendations: uniqueManga(data.recommendations).slice(0, 6),
+      updates: uniqueManga(data.updates).slice(0, 10),
+      popular: uniqueManga(data.popular).slice(0, 12),
+    };
+  }, [data]);
+
   return (
     <div className="relative min-h-screen bg-background overflow-hidden flex flex-col">
-      {/* Background Decor */}
       <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-primary/10 to-transparent pointer-events-none" />
       <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px] pointer-events-none animate-pulse" />
 
       <main className="flex-1 max-w-2xl mx-auto w-full pb-32 z-10">
         {loading ? (
           <LoadingSkeleton />
-        ) : data ? (
+        ) : safeData ? (
           <div className="animate-fade-in">
-            {/* Hero Section / Featured */}
-            {data.featured.length > 0 && (
+            {safeData.featured.length > 0 && (
               <section className="px-4 py-6">
                 <div className="flex items-center justify-between mb-4 px-1">
                   <h2 className="text-white font-black text-xl tracking-tight">Eksklusif Hari Ini</h2>
                 </div>
                 <div className="space-y-6">
-                  {data.featured.slice(0, 2).map((manga, idx) => (
-                    <div key={idx} className="animate-fade-in" style={{ animationDelay: `${idx * 150}ms` }}>
+                  {safeData.featured.slice(0, 2).map((manga, idx) => (
+                    <div key={manga.id} className="animate-fade-in" style={{ animationDelay: `${idx * 150}ms` }}>
                       <MangaCard {...manga} variant="featured" />
                     </div>
                   ))}
@@ -63,19 +82,18 @@ export default function Home() {
               </section>
             )}
 
-            {/* Recommendations - Horizontal Scroll */}
-            {data.recommendations.length > 0 && (
+            {safeData.recommendations.length > 0 && (
               <section className="py-6">
                 <div className="px-5 flex items-center justify-between mb-5">
                   <h2 className="section-title">Rekomendasi Pilihan</h2>
-                  <button className="text-[11px] font-black uppercase tracking-widest text-primary hover:text-primary-hover transition-colors">
+                  <a href="/explore" className="text-[11px] font-black uppercase tracking-widest text-primary hover:text-primary-hover transition-colors">
                     Lihat Semua
-                  </button>
+                  </a>
                 </div>
                 <div className="flex gap-4 overflow-x-auto hide-scrollbar px-5 pb-2">
-                  {data.recommendations.map((manga, idx) => (
+                  {safeData.recommendations.map((manga) => (
                     <div
-                      key={idx}
+                      key={manga.id}
                       className="w-32 flex-shrink-0"
                     >
                       <MangaCard {...manga} variant="vertical" />
@@ -85,7 +103,6 @@ export default function Home() {
               </section>
             )}
 
-            {/* Update Section - List */}
             <section className="px-4 py-6">
               <div className="flex items-center justify-between mb-6 px-1">
                 <h2 className="section-title">Update Terbaru</h2>
@@ -114,9 +131,9 @@ export default function Home() {
               </div>
 
               <div className="bg-card-bg/40 rounded-3xl border border-white/5 p-2 backdrop-blur-sm divide-y divide-white/5">
-                {data.updates.length > 0 ? (
-                  data.updates.map((manga, idx) => (
-                    <MangaCard key={idx} {...manga} />
+                {safeData.updates.length > 0 ? (
+                  safeData.updates.map((manga) => (
+                    <MangaCard key={manga.id} {...manga} />
                   ))
                 ) : (
                   <div className="py-12 text-center">
@@ -125,12 +142,11 @@ export default function Home() {
                 )}
               </div>
 
-              <button className="w-full mt-6 py-3 rounded-2xl border border-white/5 bg-white/5 text-muted hover:text-white hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all">
+              <a href="/explore?orderby=date" className="block text-center w-full mt-6 py-3 rounded-2xl border border-white/5 bg-white/5 text-muted hover:text-white hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all">
                 Muat Lebih Banyak
-              </button>
+              </a>
             </section>
 
-            {/* Popular Section - Grid */}
             <section className="py-6">
               <div className="px-5 flex items-center justify-between mb-6">
                 <h2 className="section-title">Populer Hari Ini</h2>
@@ -151,9 +167,9 @@ export default function Home() {
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4 px-5">
-                {data.popular.length > 0 ? (
-                  data.popular.slice(0, 9).map((manga, idx) => (
-                    <MangaCard key={idx} {...manga} variant="vertical" />
+                {safeData.popular.length > 0 ? (
+                  safeData.popular.slice(0, 9).map((manga) => (
+                    <MangaCard key={manga.id} {...manga} variant="vertical" />
                   ))
                 ) : (
                   <div className="col-span-3 py-10 text-center bg-white/5 rounded-3xl border border-white/5">
