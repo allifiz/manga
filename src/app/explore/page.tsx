@@ -40,7 +40,10 @@ export default function ExplorePage() {
     params.set("halaman", page.toString());
 
     fetch(`/api/manga?${params.toString()}`)
-      .then((res) => res.json())
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Failed to fetch manga");
+        return res.json();
+      })
       .then((d) => {
         const seen = new Set<string>();
         const uniqueManga = (d.manga || []).filter((item: MangaItem) => {
@@ -49,15 +52,22 @@ export default function ExplorePage() {
           return true;
         });
 
+        const pagination = d.pagination || {};
+        const nextTotalPages = pagination.totalPages || page;
+
         setManga(uniqueManga);
-        if (d.pagination) {
-          setTotalPages(d.pagination.totalPages || 1);
-          setHasNextPage(Boolean(d.pagination.hasNextPage));
-        }
+        setTotalPages(Math.max(1, nextTotalPages));
+        setHasNextPage(Boolean(pagination.hasNextPage) || page < nextTotalPages);
         setLoading(false);
         window.scrollTo({ top: 0, behavior: "smooth" });
       })
-      .catch(() => setLoading(false));
+      .catch((error) => {
+        console.error("Explore fetch error:", error);
+        setManga([]);
+        setTotalPages(1);
+        setHasNextPage(false);
+        setLoading(false);
+      });
   }, [activeGenre, activeType, activeStatus, activeOrder, page]);
 
   useEffect(() => {
@@ -89,7 +99,7 @@ export default function ExplorePage() {
   const statuses = [
     { label: "Semua", value: "" },
     { label: "Ongoing", value: "ongoing" },
-    { label: "Tamat", value: "end" },
+    { label: "Tamat", value: "tamat" },
   ];
 
   const orders = [
@@ -116,7 +126,7 @@ export default function ExplorePage() {
             <div className="flex flex-wrap gap-2">
               {types.map((t) => (
                 <button
-                  key={t.value}
+                  key={t.value || "all-type"}
                   onClick={() => {
                     setActiveType(t.value);
                     setPage(1);
@@ -138,7 +148,7 @@ export default function ExplorePage() {
             <div className="flex flex-wrap gap-2">
               {statuses.map((s) => (
                 <button
-                  key={s.value}
+                  key={s.value || "all-status"}
                   onClick={() => {
                     setActiveStatus(s.value);
                     setPage(1);
@@ -160,7 +170,7 @@ export default function ExplorePage() {
             <div className="flex flex-wrap gap-2">
               {orders.map((o) => (
                 <button
-                  key={o.value}
+                  key={o.value || "default-order"}
                   onClick={() => {
                     setActiveOrder(o.value);
                     setPage(1);
@@ -234,12 +244,12 @@ export default function ExplorePage() {
             <div className="flex items-center justify-center gap-6 mt-16 pt-10 border-t border-white/5">
               <button
                 disabled={page === 1}
-                onClick={() => setPage((p) => p - 1)}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
                 className="px-6 py-3 bg-white/5 text-white font-black text-xs uppercase tracking-widest rounded-2xl disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/10 transition-all border border-white/5"
               >
                 Prev
               </button>
-              <div className="flex flex-col items-center">
+              <div className="flex flex-col items-center min-w-16">
                 <span className="text-white font-black text-base italic">{page}</span>
                 {totalPages > 1 && <span className="text-muted text-[10px] font-bold uppercase tracking-tighter">dari {totalPages}</span>}
               </div>
