@@ -26,6 +26,14 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"project" | "mirror">("project");
   const [popularTab, setPopularTab] = useState<"daily" | "weekly" | "all">("daily");
 
+  // Latest Updates Pagination
+  const [latestManga, setLatestManga] = useState<MangaItem[]>([]);
+  const [latestLoading, setLatestLoading] = useState(false);
+  const [latestPage, setLatestPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [cachedManga, setCachedManga] = useState<MangaItem[]>([]);
+  const [apiPage, setApiPage] = useState(1);
+
   useEffect(() => {
     fetch("/api/home")
       .then((res) => res.json())
@@ -35,6 +43,45 @@ export default function Home() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const itemsPerPage = 10;
+    const localIdx = (latestPage - 1) % 5; // Assuming API returns 50 items
+
+    const neededApiPage = Math.floor((latestPage - 1) / 5) + 1;
+
+    const displayCached = (all: MangaItem[]) => {
+      const start = localIdx * itemsPerPage;
+      const slice = all.slice(start, start + itemsPerPage);
+      setLatestManga(slice);
+      setHasNextPage(all.length > start + itemsPerPage || neededApiPage < 100); // Rough estimate
+    };
+
+    if (neededApiPage !== apiPage || cachedManga.length === 0) {
+      setLatestLoading(true);
+      fetch(`/api/manga?orderby=modified&page=${neededApiPage}&tipe=${activeTab === "mirror" ? "manga" : "manhwa"}`)
+        .then((res) => res.json())
+        .then((d) => {
+          if (isMounted) {
+            const all = d.manga || [];
+            setCachedManga(all);
+            setApiPage(neededApiPage);
+            displayCached(all);
+            setLatestLoading(false);
+          }
+        })
+        .catch(() => {
+          if (isMounted) setLatestLoading(false);
+        });
+    } else {
+      displayCached(cachedManga);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [latestPage, activeTab, cachedManga, apiPage]);
 
   return (
     <div className="relative min-h-screen bg-background overflow-hidden flex flex-col">
@@ -91,7 +138,7 @@ export default function Home() {
                 <h2 className="section-title">Update Terbaru</h2>
                 <div className="flex p-1 rounded-2xl bg-white/5 border border-white/5 backdrop-blur-md">
                   <button
-                    onClick={() => setActiveTab("project")}
+                    onClick={() => { setActiveTab("project"); setLatestPage(1); setCachedManga([]); }}
                     className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${
                       activeTab === "project"
                         ? "bg-primary text-white shadow-lg shadow-primary/30"
@@ -101,7 +148,7 @@ export default function Home() {
                     Project
                   </button>
                   <button
-                    onClick={() => setActiveTab("mirror")}
+                    onClick={() => { setActiveTab("mirror"); setLatestPage(1); setCachedManga([]); }}
                     className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${
                       activeTab === "mirror"
                         ? "bg-primary text-white shadow-lg shadow-primary/30"
@@ -114,8 +161,12 @@ export default function Home() {
               </div>
 
               <div className="bg-card-bg/40 rounded-3xl border border-white/5 p-2 backdrop-blur-sm divide-y divide-white/5">
-                {data.updates.length > 0 ? (
-                  data.updates.map((manga, idx) => (
+                {latestLoading ? (
+                  <div className="py-20 flex justify-center">
+                    <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : latestManga.length > 0 ? (
+                  latestManga.map((manga, idx) => (
                     <MangaCard key={idx} {...manga} />
                   ))
                 ) : (
@@ -125,9 +176,23 @@ export default function Home() {
                 )}
               </div>
 
-              <button className="w-full mt-6 py-3 rounded-2xl border border-white/5 bg-white/5 text-muted hover:text-white hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all">
-                Muat Lebih Banyak
-              </button>
+              <div className="flex items-center justify-center gap-4 mt-8">
+                <button
+                  disabled={latestPage === 1 || latestLoading}
+                  onClick={() => setLatestPage(p => p - 1)}
+                  className="flex-1 py-3 rounded-2xl border border-white/5 bg-white/5 text-muted hover:text-white hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all disabled:opacity-20"
+                >
+                  Prev
+                </button>
+                <div className="px-4 text-white font-black text-sm">{latestPage}</div>
+                <button
+                  disabled={!hasNextPage || latestLoading}
+                  onClick={() => setLatestPage(p => p + 1)}
+                  className="flex-1 py-3 rounded-2xl border border-white/5 bg-primary text-white hover:bg-primary-hover text-xs font-black uppercase tracking-widest transition-all disabled:opacity-20"
+                >
+                  Next
+                </button>
+              </div>
             </section>
 
             {/* Popular Section - Grid */}

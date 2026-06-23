@@ -37,7 +37,7 @@ export default function ExplorePage() {
     if (activeType) params.append("tipe", activeType);
     if (activeStatus) params.append("status", activeStatus);
     if (activeOrder) params.append("orderby", activeOrder);
-    params.append("page", page.toString());
+    params.append("halaman", page.toString());
 
     fetch(`/api/manga?${params.toString()}`)
       .then((res) => res.json())
@@ -87,10 +87,9 @@ export default function ExplorePage() {
 
   const orders = [
     { label: "Default", value: "" },
-    { label: "Terbaru", value: "date" },
-    { label: "Update", value: "modified" },
+    { label: "Terbaru", value: "modified" },
     { label: "Populer", value: "meta_value_num" },
-    { label: "Acak", value: "rand" },
+    { label: "A-Z", value: "title" },
   ];
 
   return (

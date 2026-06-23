@@ -1,53 +1,120 @@
 "use client";
 
 import { useEffect, useState, Suspense, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import MangaCard from "@/components/MangaCard";
 
-interface SearchResult {
+interface Genre {
+  name: string;
+  slug: string;
+}
+
+interface MangaItem {
   id: string;
   title: string;
   cover: string;
   type?: string;
   rating?: string;
+  chapters?: any[];
 }
 
 function SearchContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const query = searchParams.get("q") || "";
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const activeGenre = searchParams.get("genre") || "";
+  const activeType = searchParams.get("tipe") || "";
+  const activeStatus = searchParams.get("status") || "";
+  const activeOrder = searchParams.get("orderby") || "";
+  const page = parseInt(searchParams.get("page") || "1");
+
+  const [results, setResults] = useState<MangaItem[]>([]);
+  const [genres, setGenres] = useState<Genre[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchInput, setSearchInput] = useState(query);
+  const [totalPages, setTotalPages] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
 
-  const performSearch = useCallback((q: string) => {
+  const performSearch = useCallback(() => {
+    let isMounted = true;
     setLoading(true);
-    fetch(`/api/manga?s=${encodeURIComponent(q)}`)
+    const params = new URLSearchParams();
+    if (query) params.append("s", query);
+    if (activeGenre) params.append("genre", activeGenre);
+    if (activeType) params.append("tipe", activeType);
+    if (activeStatus) params.append("status", activeStatus);
+    if (activeOrder) params.append("orderby", activeOrder);
+    params.append("halaman", page.toString());
+
+    fetch(`/api/manga?${params.toString()}`)
       .then((res) => res.json())
       .then((d) => {
-        setResults(d.manga || []);
-        setLoading(false);
+        if (isMounted) {
+          setResults(d.manga || []);
+          if (d.pagination) {
+            setTotalPages(d.pagination.totalPages);
+            setHasNextPage(d.pagination.hasNextPage);
+          }
+          setLoading(false);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        if (isMounted) setLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [query, activeGenre, activeType, activeStatus, activeOrder, page]);
+
+  useEffect(() => {
+    fetch("/api/genres")
+      .then((res) => res.json())
+      .then((d) => setGenres(d.genres || []))
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
-    if (query) {
-      setSearchInput(query);
-      performSearch(query);
-    }
-  }, [query, performSearch]);
+    performSearch();
+  }, [performSearch]);
+
+  useEffect(() => {
+    setSearchInput(query);
+  }, [query]);
+
+  const updateFilters = (newParams: Record<string, string | number>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(newParams).forEach(([key, value]) => {
+      if (value) params.set(key, value.toString());
+      else params.delete(key);
+    });
+    if (!newParams.page) params.set("page", "1");
+    router.push(`/search?${params.toString()}`);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchInput.trim()) {
-      window.history.pushState(null, "", `/search?q=${encodeURIComponent(searchInput.trim())}`);
-      performSearch(searchInput.trim());
-    }
+    updateFilters({ q: searchInput.trim(), page: 1 });
   };
 
-  const genres = [
-    "Action", "Romance", "Comedy", "Fantasy", "Drama", "Horror",
-    "Isekai", "Shounen", "Adventure", "Martial Arts"
+  const types = [
+    { label: "Semua", value: "" },
+    { label: "Manga", value: "manga" },
+    { label: "Manhwa", value: "manhwa" },
+    { label: "Manhua", value: "manhua" },
+  ];
+
+  const statuses = [
+    { label: "Semua", value: "" },
+    { label: "Ongoing", value: "ongoing" },
+    { label: "Tamat", value: "end" },
+  ];
+
+  const orders = [
+    { label: "Default", value: "" },
+    { label: "Terbaru", value: "modified" },
+    { label: "Populer", value: "meta_value_num" },
+    { label: "A-Z", value: "title" },
   ];
 
   return (
@@ -59,7 +126,7 @@ function SearchContent() {
       </div>
 
       {/* Search Form */}
-      <form onSubmit={handleSubmit} className="mb-10">
+      <form onSubmit={handleSubmit} className="mb-8">
         <div className="relative group">
           <input
             type="text"
@@ -79,27 +146,94 @@ function SearchContent() {
         </div>
       </form>
 
-      {/* Genre Quick Links */}
-      {!query && results.length === 0 && (
-        <div className="animate-fade-in">
-          <h3 className="text-white font-black text-[10px] uppercase tracking-[0.2em] mb-4 text-center opacity-50">Genre Populer</h3>
-          <div className="flex flex-wrap justify-center gap-2">
-            {genres.map((genre) => (
+      {/* Filter Controls */}
+      <div className="space-y-6 mb-10 bg-card-bg/40 p-6 rounded-3xl border border-white/5 backdrop-blur-md">
+          {/* Tipe Filter */}
+          <div>
+            <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Tipe</p>
+            <div className="flex flex-wrap gap-2">
+              {types.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => updateFilters({ tipe: t.value })}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
+                    activeType === t.value
+                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                    : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Status Filter */}
+          <div>
+            <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Status</p>
+            <div className="flex flex-wrap gap-2">
+              {statuses.map((s) => (
+                <button
+                  key={s.value}
+                  onClick={() => updateFilters({ status: s.value })}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
+                    activeStatus === s.value
+                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                    : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Order Filter */}
+          <div>
+            <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Urutkan</p>
+            <div className="flex flex-wrap gap-2">
+              {orders.map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => updateFilters({ orderby: o.value })}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
+                    activeOrder === o.value
+                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                    : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Genre Filter */}
+          <div>
+            <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Genre</p>
+            <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
               <button
-                key={genre}
-                onClick={() => {
-                  setSearchInput(genre);
-                  window.history.pushState(null, "", `/search?q=${encodeURIComponent(genre)}`);
-                  performSearch(genre);
-                }}
-                className="px-5 py-2.5 bg-white/5 text-muted text-xs font-bold rounded-xl hover:bg-primary hover:text-white transition-all duration-300 border border-white/5 hover:border-primary hover:shadow-lg hover:shadow-primary/20"
+                onClick={() => updateFilters({ genre: "" })}
+                className={`px-5 py-2 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex-shrink-0 ${
+                  activeGenre === "" ? "bg-primary text-white shadow-lg shadow-primary/20" : "bg-white/5 text-muted hover:text-white"
+                }`}
               >
-                {genre}
+                Semua Genre
               </button>
-            ))}
+              {genres.map((genre) => (
+                <button
+                  key={genre.slug}
+                  onClick={() => updateFilters({ genre: genre.slug })}
+                  className={`px-5 py-2 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex-shrink-0 ${
+                    activeGenre === genre.slug ? "bg-primary text-white shadow-lg shadow-primary/20" : "bg-white/5 text-muted hover:text-white"
+                  }`}
+                >
+                  {genre.name}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      )}
 
       {/* Results */}
       <div className="mt-4">
@@ -116,12 +250,36 @@ function SearchContent() {
             ))}
           </div>
         ) : results.length > 0 ? (
-          <div className="space-y-2 animate-fade-in">
-            <p className="text-muted text-[10px] font-black uppercase tracking-widest mb-4 px-2">Hasil Pencarian ({results.length})</p>
-            {results.map((result, idx) => (
-              <MangaCard key={idx} {...result} />
-            ))}
-          </div>
+          <>
+            <div className="space-y-2 animate-fade-in">
+              <p className="text-muted text-[10px] font-black uppercase tracking-widest mb-4 px-2">Hasil Pencarian ({results.length})</p>
+              {results.map((result, idx) => (
+                <MangaCard key={idx} {...result} />
+              ))}
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-center gap-6 mt-16 pt-10 border-t border-white/5">
+              <button
+                disabled={page === 1}
+                onClick={() => updateFilters({ page: page - 1 })}
+                className="px-6 py-3 bg-white/5 text-white font-black text-xs uppercase tracking-widest rounded-2xl disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/10 transition-all border border-white/5"
+              >
+                Prev
+              </button>
+              <div className="flex flex-col items-center">
+                <span className="text-white font-black text-base italic">{page}</span>
+                {totalPages > 1 && <span className="text-muted text-[10px] font-bold uppercase tracking-tighter">dari {totalPages}</span>}
+              </div>
+              <button
+                disabled={!hasNextPage}
+                onClick={() => updateFilters({ page: page + 1 })}
+                className="px-6 py-3 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-2xl disabled:opacity-20 disabled:cursor-not-allowed hover:bg-primary-hover shadow-lg shadow-primary/20 transition-all"
+              >
+                Next
+              </button>
+            </div>
+          </>
         ) : query ? (
           <div className="text-center py-20 bg-card-bg/20 rounded-[40px] border border-white/5 backdrop-blur-sm">
             <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
