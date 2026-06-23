@@ -31,6 +31,7 @@ export interface MangaItem {
   isNew?: boolean;
   type?: string;
   status?: string;
+  genres?: string[];
 }
 
 export interface MangaDetail {
@@ -133,8 +134,13 @@ function normalizeFilterValue(value?: string | null): string | undefined {
     .toLowerCase();
 
   if (!clean || clean === "all" || clean === "semua") return undefined;
-  if (clean === "end") return "tamat";
+  if (["end", "ended", "complete", "completed", "tamat"].includes(clean)) return "tamat";
+  if (["on-going", "ongoing"].includes(clean)) return "ongoing";
   return clean;
+}
+
+function normalizeGenreText(value?: string | null): string {
+  return normalizeFilterValue(value)?.replace(/\s+/g, "-") || "";
 }
 
 function getImageSrc($: cheerio.CheerioAPI, el: any): string {
@@ -197,6 +203,12 @@ function parseMangaItem($: cheerio.CheerioAPI, el: any): MangaItem | null {
   const cover = getImageSrc($, $el.find("img").first().get(0));
   const meta = cleanMeta($el.find(".meta, .ls4s, .ls2t, .kan, .status").text() || $el.text());
   const metaLower = meta.toLowerCase();
+  const type = meta.match(/\b(Manga|Manhwa|Manhua)\b/i)?.[1];
+  const genrePieces = meta
+    .split(/Status:/i)[0]
+    .split("•")
+    .map((part) => cleanMeta(part))
+    .filter((part) => part && !/^(manga|manhwa|manhua)$/i.test(part));
 
   const chapters: MangaItem["chapters"] = [];
   const seenChapters = new Set<string>();
@@ -218,13 +230,14 @@ function parseMangaItem($: cheerio.CheerioAPI, el: any): MangaItem | null {
     chapters: chapters.slice(0, 3),
     rating: $el.find(".rating, .nilai").first().text().trim() || undefined,
     isNew: $el.find(".up, .new, .hot").length > 0,
-    type: meta.match(/\b(Manga|Manhwa|Manhua)\b/i)?.[1],
+    type,
     status:
-      metaLower.includes("tamat") || metaLower.includes("status: end") || /\bend\b/i.test(meta)
+      metaLower.includes("status: end") || metaLower.includes("status: tamat") || /\bend\b/i.test(meta)
         ? "Tamat"
-        : metaLower.includes("ongoing")
+        : metaLower.includes("status: ongoing") || metaLower.includes("ongoing")
           ? "Ongoing"
           : undefined,
+    genres: genrePieces,
   };
 }
 
@@ -437,17 +450,20 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
   }
 }
 
-function buildFilterParams(filters: MangaListFilters, omit: string[] = []): string {
+function buildFilterParams(filters: MangaListFilters, extra?: Record<string, string | undefined>): string {
   const params = new URLSearchParams();
   const tipe = normalizeFilterValue(filters.tipe);
-  const genre2 = normalizeFilterValue(filters.genre2);
+  const genre = normalizeFilterValue(filters.genre || filters.genre2);
   const status = normalizeFilterValue(filters.status);
   const orderby = normalizeFilterValue(filters.orderby);
 
-  if (tipe && !omit.includes("tipe")) params.set("tipe", tipe);
-  if (genre2 && !omit.includes("genre2")) params.set("genre2", genre2);
-  if (status && !omit.includes("status")) params.set("status", status);
-  if (orderby && !omit.includes("orderby")) params.set("orderby", orderby);
+  if (tipe) params.set("tipe", tipe);
+  if (genre) params.set("genre2", genre);
+  if (status) params.set("status", status);
+  if (orderby) params.set("orderby", orderby);
+  Object.entries(extra || {}).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
 
   return params.toString();
 }
@@ -458,31 +474,36 @@ function buildPagedPath(basePath: string, page: number, query = ""): string {
   return query ? `${path}?${query}` : path;
 }
 
-function buildSearchQuery(query: string): string {
+function buildSearchQuery(query: string, postType: string): string {
   const params = new URLSearchParams();
-  params.set("post_type", "manga");
+  params.set("post_type", postType);
   params.set("s", query);
   return params.toString();
 }
 
-function getListUrls(filters: MangaListFilters): string[] {
-  const page = filters.halaman || 1;
-  const search = filters.s?.trim();
-  const genre = normalizeFilterValue(filters.genre);
-  const query = buildFilterParams(filters, genre ? ["genre"] : []);
-
-  if (search) {
-    const searchQuery = buildSearchQuery(search);
+function getSearchUrls(search: string, page: number): string[] {
+  return ["manga", "manhwa", "manhua"].flatMap((postType) => {
+    const searchQuery = buildSearchQuery(search, postType);
     return page > 1
       ? [`/page/${page}/?${searchQuery}`, `/?${searchQuery}&paged=${page}`]
       : [`/?${searchQuery}`];
-  }
+  });
+}
 
+function getListUrls(filters: MangaListFilters, page = filters.halaman || 1): string[] {
+  const search = filters.s?.trim();
+  const genre = normalizeFilterValue(filters.genre || filters.genre2);
+
+  if (search) return getSearchUrls(search, page);
+
+  const urls: string[] = [];
   if (genre) {
-    return [buildPagedPath(`/genre/${genre}/`, page, query)];
+    urls.push(buildPagedPath("/daftar-komik/", page, buildFilterParams(filters, { genre2: genre })));
+    urls.push(buildPagedPath(`/genre/${genre}/`, page));
+    return urls;
   }
 
-  return [buildPagedPath("/daftar-komik/", page, query)];
+  return [buildPagedPath("/daftar-komik/", page, buildFilterParams(filters))];
 }
 
 function parsePagination($: cheerio.CheerioAPI, currentPage: number) {
@@ -492,32 +513,68 @@ function parsePagination($: cheerio.CheerioAPI, currentPage: number) {
     .map((_, el) => Number(cleanMeta($(el).text())))
     .get()
     .filter((n) => Number.isFinite(n));
-  const totalPages = Math.max(currentPage, Number(totalFromText) || 1, ...pageNumbers);
-  const hasNextPage =
+  const rawTotalPages = Math.max(currentPage, Number(totalFromText) || 1, ...pageNumbers);
+  const hasRawNextPage =
     /Next\s*→|Berikutnya/i.test(bodyText) ||
     $("a.next, a.nextpostslink, .pagination a:contains('Next'), .pagination a:contains('→'), .nav-links a:contains('Next')").length > 0 ||
     pageNumbers.some((n) => n > currentPage) ||
-    currentPage < totalPages;
+    currentPage < rawTotalPages;
 
-  return {
-    currentPage,
-    totalPages,
-    hasNextPage,
-    hasPrevPage: currentPage > 1,
-  };
+  return { rawTotalPages, hasRawNextPage };
 }
 
 function itemMatchesFilters(item: MangaItem, filters: MangaListFilters): boolean {
   const tipe = normalizeFilterValue(filters.tipe);
   const status = normalizeFilterValue(filters.status);
+  const genre = normalizeFilterValue(filters.genre || filters.genre2);
 
   if (tipe && item.type && item.type.toLowerCase() !== tipe) return false;
   if (status && item.status) {
-    const itemStatus = item.status.toLowerCase() === "end" ? "tamat" : item.status.toLowerCase();
+    const itemStatus = normalizeFilterValue(item.status);
     if (itemStatus !== status) return false;
+  }
+  if (genre && item.genres?.length) {
+    const itemGenres = item.genres.map(normalizeGenreText);
+    if (!itemGenres.includes(genre)) return false;
   }
 
   return true;
+}
+
+function filterParsedItems(parsed: MangaItem[], filters: MangaListFilters): MangaItem[] {
+  const filtered = parsed.filter((item) => itemMatchesFilters(item, filters));
+  return uniqueById(filtered).slice(0, 10);
+}
+
+async function fetchFilteredPage(filters: MangaListFilters, page: number) {
+  let lastRawTotalPages = page;
+  let lastRawHasNext = false;
+
+  for (const url of getListUrls(filters, page)) {
+    try {
+      const { data: html } = await api.get(url);
+      const $ = cheerio.load(html);
+      const parsed = parseMangaItems($);
+      const manga = filterParsedItems(parsed, filters);
+      const pagination = parsePagination($, page);
+      lastRawTotalPages = Math.max(lastRawTotalPages, pagination.rawTotalPages);
+      lastRawHasNext = lastRawHasNext || pagination.hasRawNextPage;
+
+      if (manga.length > 0) {
+        return { manga, rawTotalPages: pagination.rawTotalPages, rawHasNextPage: pagination.hasRawNextPage };
+      }
+    } catch (error: any) {
+      console.error(`Error fetching ${url}:`, error.message);
+    }
+  }
+
+  return { manga: [] as MangaItem[], rawTotalPages: lastRawTotalPages, rawHasNextPage: lastRawHasNext };
+}
+
+async function hasValidNextPage(filters: MangaListFilters, currentPage: number, rawTotalPages: number, rawHasNextPage: boolean) {
+  if (!rawHasNextPage && currentPage >= rawTotalPages) return false;
+  const next = await fetchFilteredPage(filters, currentPage + 1);
+  return next.manga.length > 0;
 }
 
 export async function searchManga(query: string, page = 1): Promise<SearchResult[]> {
@@ -534,30 +591,20 @@ export async function searchManga(query: string, page = 1): Promise<SearchResult
 
 export async function getMangaList(filters: MangaListFilters): Promise<MangaListResponse> {
   const currentPage = filters.halaman || 1;
-  let lastPagination = {
-    currentPage,
-    totalPages: currentPage,
-    hasNextPage: false,
-    hasPrevPage: currentPage > 1,
-  };
 
   try {
-    for (const url of getListUrls(filters)) {
-      const { data: html } = await api.get(url);
-      const $ = cheerio.load(html);
-      const parsed = parseMangaItems($);
-      const manga = parsed.filter((item) => itemMatchesFilters(item, filters));
-      lastPagination = parsePagination($, currentPage);
+    const current = await fetchFilteredPage(filters, currentPage);
+    const hasNextPage = await hasValidNextPage(filters, currentPage, current.rawTotalPages, current.rawHasNextPage);
 
-      if (manga.length > 0) {
-        return {
-          manga: uniqueById(manga).slice(0, 10),
-          pagination: lastPagination,
-        };
-      }
-    }
-
-    return { manga: [], pagination: lastPagination };
+    return {
+      manga: current.manga,
+      pagination: {
+        currentPage,
+        totalPages: hasNextPage ? Math.max(current.rawTotalPages, currentPage + 1) : currentPage,
+        hasNextPage,
+        hasPrevPage: currentPage > 1,
+      },
+    };
   } catch (error: any) {
     console.error("Error fetching manga list:", error.message);
     return {
