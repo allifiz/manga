@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from "axios";
 
 const API_BASE_URL = "https://komiku-rest-api.vercel.app";
 const KOMIKU_BASE_URL = "https://komiku.org";
+const PAGE_SIZE = 10;
 
 export interface MangaItem {
   id: string;
@@ -103,7 +104,9 @@ function isPresent<T>(value: T | null | undefined): value is T {
 }
 
 function asString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  return "";
 }
 
 function asArray(value: unknown): unknown[] {
@@ -189,20 +192,73 @@ function uniqueById<T extends { id: string; title?: string }>(items: T[]): T[] {
   });
 }
 
-function pickItems(payload: unknown): unknown[] {
-  if (Array.isArray(payload)) return payload;
-  if (!isRecord(payload)) return [];
+function looksLikeMangaRecord(record: ApiRecord): boolean {
+  const title = firstString(record, ["title", "name"]);
+  if (!title) return false;
 
-  for (const key of ["data", "results", "items", "manga"]) {
-    const value = payload[key];
-    if (Array.isArray(value)) return value;
-    if (isRecord(value)) {
-      const nested = pickItems(value);
-      if (nested.length > 0) return nested;
+  return Boolean(
+    firstString(record, [
+      "mangaSlug",
+      "slug",
+      "apiDetailLink",
+      "detailUrl",
+      "href",
+      "originalLink",
+      "url",
+      "thumbnail",
+      "cover",
+      "image",
+      "latestChapterTitle",
+    ])
+  );
+}
+
+function collectMangaLikeRecords(value: unknown, depth = 0): unknown[] {
+  if (depth > 8) return [];
+
+  if (Array.isArray(value)) {
+    const direct = value.filter((item) => isRecord(item) && looksLikeMangaRecord(item));
+    if (direct.length > 0) return direct;
+    return value.flatMap((item) => collectMangaLikeRecords(item, depth + 1));
+  }
+
+  if (!isRecord(value)) return [];
+  if (looksLikeMangaRecord(value)) return [value];
+
+  const priorityKeys = [
+    "results",
+    "data",
+    "items",
+    "manga",
+    "manhwa",
+    "manhua",
+    "updates",
+    "latest",
+    "terbaru",
+    "recommendations",
+    "popular",
+  ];
+
+  const records: unknown[] = [];
+  const visited = new Set<string>();
+
+  for (const key of priorityKeys) {
+    if (key in value) {
+      visited.add(key);
+      records.push(...collectMangaLikeRecords(value[key], depth + 1));
     }
   }
 
-  return [];
+  for (const [key, nested] of Object.entries(value)) {
+    if (visited.has(key)) continue;
+    records.push(...collectMangaLikeRecords(nested, depth + 1));
+  }
+
+  return records;
+}
+
+function pickItems(payload: unknown): unknown[] {
+  return collectMangaLikeRecords(payload);
 }
 
 async function apiGet<T = unknown>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
@@ -276,7 +332,7 @@ function mangaItemFromApi(value: unknown): MangaItem | null {
   };
 }
 
-function mapApiItems(payload: unknown, limit = 10): MangaItem[] {
+function mapApiItems(payload: unknown, limit = PAGE_SIZE): MangaItem[] {
   return uniqueById(pickItems(payload).map(mangaItemFromApi).filter(isPresent)).slice(0, limit);
 }
 
@@ -304,26 +360,36 @@ function getFallbackData(): HomePageData {
 function flattenPopular(payload: unknown): MangaItem[] {
   if (!isRecord(payload)) return mapApiItems(payload, 12);
   const groups = [payload.manga, payload.manhwa, payload.manhua];
-  const items = groups.flatMap((group) => mapApiItems(group, 12));
-  return uniqueById(items).slice(0, 12);
+  const groupedItems = groups.flatMap((group) => mapApiItems(group, 12));
+  const recursiveItems = mapApiItems(payload, 36);
+  return uniqueById([...groupedItems, ...recursiveItems]).slice(0, 12);
+}
+
+async function getPustakaItemsForPage(page: number, limit = PAGE_SIZE): Promise<MangaItem[]> {
+  const path = page > 1 ? `/pustaka/page/${page}` : "/pustaka";
+  const payload = await apiGet(path);
+  return mapApiItems(payload, limit);
 }
 
 export async function getHomePage(): Promise<HomePageData> {
   try {
-    const [terbaru, rekomendasi, populer] = await Promise.allSettled([apiGet("/terbaru"), apiGet("/rekomendasi"), apiGet("/komik-populer")]);
+    const [terbaru, rekomendasi, populer, pustaka] = await Promise.allSettled([
+      apiGet("/terbaru"),
+      apiGet("/rekomendasi"),
+      apiGet("/komik-populer"),
+      apiGet("/pustaka"),
+    ]);
 
-    const updates = terbaru.status === "fulfilled" ? mapApiItems(terbaru.value) : [];
-    const recommendations = rekomendasi.status === "fulfilled" ? mapApiItems(rekomendasi.value, 6) : [];
-    const popular = populer.status === "fulfilled" ? flattenPopular(populer.value) : [];
+    const pustakaItems = pustaka.status === "fulfilled" ? mapApiItems(pustaka.value, 12) : [];
+    const updatesFromApi = terbaru.status === "fulfilled" ? mapApiItems(terbaru.value, 10) : [];
+    const updates = updatesFromApi.length >= 2 ? updatesFromApi : uniqueById([...updatesFromApi, ...pustakaItems]).slice(0, 10);
+    const recommendationsFromApi = rekomendasi.status === "fulfilled" ? mapApiItems(rekomendasi.value, 6) : [];
+    const popularFromApi = populer.status === "fulfilled" ? flattenPopular(populer.value) : [];
+    const recommendations = recommendationsFromApi.length >= 2 ? recommendationsFromApi : updates.slice(0, 6);
+    const popular = popularFromApi.length >= 2 ? popularFromApi : uniqueById([...pustakaItems, ...updates]).slice(0, 12);
     const featured = recommendations.length > 0 ? recommendations.slice(0, 3) : popular.slice(0, 3);
 
-    const result = {
-      featured,
-      recommendations: recommendations.length > 0 ? recommendations.slice(0, 6) : popular.slice(0, 6),
-      updates,
-      popular,
-    };
-
+    const result = { featured, recommendations, updates, popular };
     if (result.updates.length > 0 || result.popular.length > 0 || result.recommendations.length > 0) return result;
     return getFallbackData();
   } catch (error: unknown) {
@@ -472,19 +538,19 @@ function itemMatchesFilters(item: MangaItem, filters: MangaListFilters): boolean
   const status = normalizeFilterValue(filters.status);
   const genre = normalizeFilterValue(filters.genre || filters.genre2);
 
-  if (tipe && item.type) {
+  if (tipe) {
     const itemType = normalizeFilterValue(item.type);
-    if (itemType !== tipe) return false;
+    if (!itemType || itemType !== tipe) return false;
   }
 
-  if (status && item.status) {
+  if (status) {
     const itemStatus = normalizeFilterValue(item.status);
-    if (itemStatus !== status) return false;
+    if (!itemStatus || itemStatus !== status) return false;
   }
 
-  if (genre && item.genres?.length) {
-    const itemGenres = item.genres.map(normalizeGenreText);
-    if (!itemGenres.includes(genre)) return false;
+  if (genre) {
+    const itemGenres = item.genres?.map(normalizeGenreText) || [];
+    if (itemGenres.length === 0 || !itemGenres.includes(genre)) return false;
   }
 
   return true;
@@ -502,14 +568,14 @@ function pageFromPayload(payload: unknown, fallback: number): number {
 }
 
 function hasNextFromPayload(payload: unknown, currentPage: number, items: MangaItem[]): boolean {
-  if (!isRecord(payload)) return items.length >= 10;
+  if (!isRecord(payload)) return items.length >= PAGE_SIZE;
   if (typeof payload.hasNextPage === "boolean") return payload.hasNextPage;
   if (asString(payload.nextPageUrl)) return true;
   if (isRecord(payload.data)) {
     if (typeof payload.data.hasNextPage === "boolean") return payload.data.hasNextPage;
     if (asString(payload.data.nextPageUrl)) return true;
   }
-  return items.length >= 10 && currentPage < 999;
+  return items.length >= PAGE_SIZE && currentPage < 999;
 }
 
 async function getGenrePage(genre: string, page: number): Promise<MangaListResponse> {
@@ -548,13 +614,44 @@ async function getBerwarnaPage(page: number): Promise<MangaListResponse> {
   };
 }
 
+function hasActivePustakaFilter(filters: MangaListFilters): boolean {
+  return Boolean(normalizeFilterValue(filters.tipe) || normalizeFilterValue(filters.status) || filters.orderby);
+}
+
+async function getFilteredPustakaPage(filters: MangaListFilters, resultPage: number): Promise<MangaListResponse> {
+  const wanted = resultPage * PAGE_SIZE + 1;
+  const matched: MangaItem[] = [];
+
+  for (let sourcePage = 1; sourcePage <= 60 && matched.length < wanted; sourcePage += 1) {
+    const sourceItems = await getPustakaItemsForPage(sourcePage, 50);
+    if (sourceItems.length === 0) break;
+    matched.push(...sourceItems.filter((item) => itemMatchesFilters(item, filters)));
+  }
+
+  const uniqueMatched = uniqueById(matched);
+  const start = (resultPage - 1) * PAGE_SIZE;
+  const manga = uniqueMatched.slice(start, start + PAGE_SIZE);
+  const hasNextPage = uniqueMatched.length > start + PAGE_SIZE;
+
+  return {
+    manga,
+    pagination: {
+      currentPage: resultPage,
+      totalPages: hasNextPage ? resultPage + 1 : resultPage,
+      hasNextPage,
+      hasPrevPage: resultPage > 1,
+    },
+  };
+}
+
 async function getPustakaPage(filters: MangaListFilters, page: number): Promise<MangaListResponse> {
+  if (hasActivePustakaFilter(filters)) return getFilteredPustakaPage(filters, page);
+
   const path = page > 1 ? `/pustaka/page/${page}` : "/pustaka";
   const payload = await apiGet(path);
-  const parsed = mapApiItems(payload);
-  const manga = uniqueById(parsed.filter((item) => itemMatchesFilters(item, filters))).slice(0, 10);
+  const manga = mapApiItems(payload);
   const currentPage = pageFromPayload(payload, page);
-  const hasNextPage = hasNextFromPayload(payload, currentPage, parsed);
+  const hasNextPage = hasNextFromPayload(payload, currentPage, manga);
 
   return {
     manga,
@@ -570,9 +667,9 @@ async function getPustakaPage(filters: MangaListFilters, page: number): Promise<
 export async function searchManga(query: string, page = 1): Promise<SearchResult[]> {
   const payload = await apiGet("/search", { q: query });
   const all = mapApiItems(payload, 50);
-  const start = Math.max(0, (page - 1) * 10);
+  const start = Math.max(0, (page - 1) * PAGE_SIZE);
 
-  return all.slice(start, start + 10).map((item) => ({
+  return all.slice(start, start + PAGE_SIZE).map((item) => ({
     id: item.id,
     title: item.title,
     cover: item.cover,
@@ -601,8 +698,8 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
         })),
         pagination: {
           currentPage,
-          totalPages: results.length >= 10 ? currentPage + 1 : currentPage,
-          hasNextPage: results.length >= 10,
+          totalPages: results.length >= PAGE_SIZE ? currentPage + 1 : currentPage,
+          hasNextPage: results.length >= PAGE_SIZE,
           hasPrevPage: currentPage > 1,
         },
       };
@@ -624,7 +721,7 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
 export async function getGenreList(): Promise<{ name: string; slug: string }[]> {
   try {
     const payload = await apiGet("/genre-all");
-    return pickItems(payload)
+    return collectMangaLikeRecords(payload)
       .map((item) => {
         if (!isRecord(item)) return null;
         const name = firstString(item, ["title", "name"]);
