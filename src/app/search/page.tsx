@@ -29,10 +29,10 @@ function SearchContent() {
 
   const performSearch = (q: string) => {
     setLoading(true);
-    fetch(`/api/search?q=${encodeURIComponent(q)}`)
+    fetch(`/api/manga?s=${encodeURIComponent(q)}`)
       .then((res) => res.json())
       .then((d) => {
-        setResults(d.results || []);
+        setResults(d.manga || []);
         setLoading(false);
       })
       .catch(() => setLoading(false));

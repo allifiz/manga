@@ -22,16 +22,16 @@ function createClient(baseURL: string): AxiosInstance {
 }
 
 const api = createClient(BASE_URL);
-const searchApi = createClient(API_URL);
 
 export interface MangaItem {
   id: string;
   title: string;
   cover: string;
-  chapters: { number: string; time: string; url: string }[];
+  chapters?: { number: string; time: string; url: string }[];
   rating?: string;
   isNew?: boolean;
   type?: string;
+  status?: string;
 }
 
 export interface MangaDetail {
@@ -66,6 +66,7 @@ export interface SearchResult {
   cover: string;
   type?: string;
   rating?: string;
+  latestChapter?: string;
 }
 
 export interface HomePageData {
@@ -73,6 +74,26 @@ export interface HomePageData {
   recommendations: MangaItem[];
   updates: MangaItem[];
   popular: MangaItem[];
+}
+
+export interface MangaListFilters {
+  tipe?: string;
+  genre?: string;
+  genre2?: string;
+  status?: string;
+  orderby?: string;
+  halaman?: number;
+  s?: string;
+}
+
+export interface MangaListResponse {
+  manga: MangaItem[];
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPrevPage: boolean;
+  };
 }
 
 function extractSlug(href: string): string {
@@ -99,17 +120,19 @@ function resolveUrl(url: string): string {
 }
 
 function fixImageUrl(url: string): string {
+  if (!url) return "";
+  if (url.includes("lazy.jpg")) return "";
   return resolveUrl(url);
 }
 
-function getImageSrc($: cheerio.CheerioAPI, el: unknown): string {
+function getImageSrc($: cheerio.CheerioAPI, el: any): string {
   if (!el) return "";
-  const $el = $(el as never);
+  const $el = $(el);
   return $el.attr("data-src") || $el.attr("data-lazy-src") || $el.attr("src") || "";
 }
 
-function parseLs2Item($: cheerio.CheerioAPI, el: unknown): MangaItem | null {
-  const $el = $(el as never);
+function parseLs2Item($: cheerio.CheerioAPI, el: any): MangaItem | null {
+  const $el = $(el);
   const title =
     $el.find("h3 a").text().trim() ||
     $el
@@ -142,8 +165,8 @@ function parseLs2Item($: cheerio.CheerioAPI, el: unknown): MangaItem | null {
   };
 }
 
-function parseLs4Item($: cheerio.CheerioAPI, el: unknown): MangaItem | null {
-  const $el = $(el as never);
+function parseLs4Item($: cheerio.CheerioAPI, el: any): MangaItem | null {
+  const $el = $(el);
   const title =
     $el.find("h4 a").text().trim() ||
     $el
@@ -177,238 +200,45 @@ function parseLs4Item($: cheerio.CheerioAPI, el: unknown): MangaItem | null {
   };
 }
 
-// Fallback manga data from known popular titles
 function getFallbackData(): HomePageData {
-  const mangaList: MangaItem[] = [
-    {
-      id: "the-beginning-after-the-end",
-      title: "The Beginning After The End",
-      cover: "https://m.media-amazon.com/images/I/81k8p8yEj4L._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 240",
-          time: "9 mnt",
-          url: "https://komiku.org/the-beginning-after-the-end-chapter-240/",
+    const mangaList: MangaItem[] = [
+      {
+        id: "the-beginning-after-the-end",
+        title: "The Beginning After The End",
+        cover: "https://thumbnail.komiku.org/uploads/manga/the-beginning-after-the-end/manga_thumbnail-Manhwa-The-Beginning-After-The-End-1.jpg",
+        chapters: [
+          {
+            number: "Chapter 240",
+            time: "9 mnt",
+            url: "https://komiku.org/the-beginning-after-the-end-chapter-240/",
+          },
+        ],
+        rating: "9.2",
+        isNew: true,
+      },
+      {
+          id: "solo-leveling",
+          title: "Solo Leveling",
+          cover: "https://thumbnail.komiku.org/img/upload/solo_leveling/img_5c760927e1f40.jpg",
+          chapters: [
+            {
+              number: "Chapter 200",
+              time: "1 jam",
+              url: "https://komiku.org/solo-leveling-chapter-200/",
+            },
+          ],
+          rating: "9.5",
+          isNew: true,
         },
-        {
-          number: "Chapter 239",
-          time: "6 hari",
-          url: "https://komiku.org/the-beginning-after-the-end-chapter-239/",
-        },
-      ],
-      rating: "9.2",
-      isNew: true,
-    },
-    {
-      id: "solo-leveling",
-      title: "Solo Leveling",
-      cover: "https://m.media-amazon.com/images/I/81f9FjO-URL._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 200",
-          time: "1 jam",
-          url: "https://komiku.org/solo-leveling-chapter-200/",
-        },
-        {
-          number: "Chapter 199",
-          time: "3 hari",
-          url: "https://komiku.org/solo-leveling-chapter-199/",
-        },
-      ],
-      rating: "9.5",
-      isNew: true,
-    },
-    {
-      id: "one-punch-man",
-      title: "One Punch Man",
-      cover: "https://m.media-amazon.com/images/I/81U9WH1V4mL._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 245",
-          time: "2 jam",
-          url: "https://komiku.org/one-punch-man-chapter-245/",
-        },
-        {
-          number: "Chapter 244",
-          time: "7 hari",
-          url: "https://komiku.org/one-punch-man-chapter-244/",
-        },
-      ],
-      rating: "9.0",
-    },
-    {
-      id: "jujutsu-kaisen",
-      title: "Jujutsu Kaisen",
-      cover: "https://m.media-amazon.com/images/I/81bX4KnYx+L._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 271",
-          time: "3 jam",
-          url: "https://komiku.org/jujutsu-kaisen-chapter-271/",
-        },
-        {
-          number: "Chapter 270",
-          time: "5 hari",
-          url: "https://komiku.org/jujutsu-kaisen-chapter-270/",
-        },
-      ],
-      rating: "8.8",
-    },
-    {
-      id: "tower-of-god",
-      title: "Tower of God",
-      cover: "https://m.media-amazon.com/images/I/81vC3RqsVxL._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 630",
-          time: "5 jam",
-          url: "https://komiku.org/tower-of-god-chapter-630/",
-        },
-        {
-          number: "Chapter 629",
-          time: "7 hari",
-          url: "https://komiku.org/tower-of-god-chapter-629/",
-        },
-      ],
-      rating: "8.6",
-      isNew: true,
-    },
-    {
-      id: "chainsaw-man",
-      title: "Chainsaw Man",
-      cover: "https://m.media-amazon.com/images/I/81d6Fj25FEL._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 180",
-          time: "6 jam",
-          url: "https://komiku.org/chainsaw-man-chapter-180/",
-        },
-        {
-          number: "Chapter 179",
-          time: "2 hari",
-          url: "https://komiku.org/chainsaw-man-chapter-179/",
-        },
-      ],
-      rating: "8.9",
-    },
-    {
-      id: "spy-x-family",
-      title: "Spy x Family",
-      cover: "https://m.media-amazon.com/images/I/81Yr9yH4KVL._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 110",
-          time: "8 jam",
-          url: "https://komiku.org/spy-x-family-chapter-110/",
-        },
-        {
-          number: "Chapter 109",
-          time: "4 hari",
-          url: "https://komiku.org/spy-x-family-chapter-109/",
-        },
-      ],
-      rating: "8.7",
-    },
-    {
-      id: "my-hero-academia",
-      title: "My Hero Academia",
-      cover: "https://m.media-amazon.com/images/I/81e5UO5C7fL._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 430",
-          time: "1 hari",
-          url: "https://komiku.org/my-hero-academia-chapter-430/",
-        },
-        {
-          number: "Chapter 429",
-          time: "8 hari",
-          url: "https://komiku.org/my-hero-academia-chapter-429/",
-        },
-      ],
-      rating: "8.5",
-    },
-    {
-      id: "demon-slayer",
-      title: "Demon Slayer: Kimetsu no Yaiba",
-      cover: "https://m.media-amazon.com/images/I/81cE5+NKjRL._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 205",
-          time: "2 hari",
-          url: "https://komiku.org/demon-slayer-chapter-205/",
-        },
-        {
-          number: "Chapter 204",
-          time: "10 hari",
-          url: "https://komiku.org/demon-slayer-chapter-204/",
-        },
-      ],
-      rating: "9.1",
-    },
-    {
-      id: "lookism",
-      title: "Lookism",
-      cover: "https://m.media-amazon.com/images/I/71g7b-GqYRL._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 520",
-          time: "12 jam",
-          url: "https://komiku.org/lookism-chapter-520/",
-        },
-        {
-          number: "Chapter 519",
-          time: "5 hari",
-          url: "https://komiku.org/lookism-chapter-519/",
-        },
-      ],
-      rating: "8.4",
-      isNew: true,
-    },
-    {
-      id: "black-clover",
-      title: "Black Clover",
-      cover: "https://m.media-amazon.com/images/I/81qYVV56V7L._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 370",
-          time: "1 hari",
-          url: "https://komiku.org/black-clover-chapter-370/",
-        },
-        {
-          number: "Chapter 369",
-          time: "6 hari",
-          url: "https://komiku.org/black-clover-chapter-369/",
-        },
-      ],
-      rating: "8.3",
-    },
-    {
-      id: "one-piece",
-      title: "One Piece",
-      cover: "https://m.media-amazon.com/images/I/81p+B7lMf4L._AC_UF1000,1000_QL80_.jpg",
-      chapters: [
-        {
-          number: "Chapter 1120",
-          time: "3 hari",
-          url: "https://komiku.org/one-piece-chapter-1120/",
-        },
-        {
-          number: "Chapter 1119",
-          time: "10 hari",
-          url: "https://komiku.org/one-piece-chapter-1119/",
-        },
-      ],
-      rating: "9.4",
-    },
-  ];
+    ];
 
-  return {
-    featured: mangaList.slice(0, 3),
-    recommendations: mangaList.slice(3, 9),
-    updates: mangaList.slice(0, 8),
-    popular: mangaList.slice(4, 12),
-  };
-}
+    return {
+      featured: mangaList.slice(0, 3),
+      recommendations: mangaList.slice(0, 6),
+      updates: mangaList.slice(0, 8),
+      popular: mangaList.slice(0, 12),
+    };
+  }
 
 export async function getHomePage(): Promise<HomePageData> {
   try {
@@ -455,9 +285,8 @@ export async function getHomePage(): Promise<HomePageData> {
       return result;
     }
     return getFallbackData();
-  } catch (error: unknown) {
-    const err = error as { message?: string; response?: { status: number } };
-    console.error("Error scraping homepage:", err.message);
+  } catch (error: any) {
+    console.error("Error scraping homepage:", error.message);
     return getFallbackData();
   }
 }
@@ -566,23 +395,17 @@ export async function getMangaDetail(slug: string): Promise<MangaDetail | null> 
       type,
       chapters,
     };
-  } catch (error: unknown) {
-    const err = error as { message?: string };
-    console.error("Error scraping manga detail:", err.message);
+  } catch (error: any) {
+    console.error("Error scraping manga detail:", error.message);
     return getFallbackMangaDetail(slug);
   }
 }
 
 function getFallbackMangaDetail(slug: string): MangaDetail {
   const title = slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const cover = "https://via.placeholder.com/300x450/1A1A1A/666?text=No+Cover";
+  const rating = "8.5";
 
-  const fallbackData = getFallbackData();
-  const found = [...fallbackData.updates, ...fallbackData.popular].find((m) => m.id === slug);
-
-  const cover = found?.cover || "https://via.placeholder.com/300x450/1A1A1A/666?text=No+Cover";
-  const rating = found?.rating || "8.5";
-
-  // Generate sample chapters
   const chapters: MangaDetail["chapters"] = [];
   const chCount = 50 + Math.floor(Math.random() * 200);
   for (let i = chCount; i > 0; i--) {
@@ -646,8 +469,7 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
       .get()
       .filter((href) => href.includes("-chapter-"));
 
-    // Attempt to determine prev/next by chapter numbers (more robust)
-    function extractNumFromHref(href: string): number | null {
+    function extractNumFromHref(href: string) {
       const m = href.match(/-chapter-([\d.]+)/i);
       if (m && m[1]) return parseFloat(m[1]);
       return null;
@@ -660,11 +482,9 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
     let nextChapter: string | undefined;
 
     if (!isNaN(Number(currentNum)) && navItems.some((i) => i.num !== null)) {
-      // find prev: largest num < currentNum
       const prev = navItems
         .filter((i) => i.num !== null && (i.num as number) < (currentNum as number))
         .sort((a, b) => (b.num as number) - (a.num as number))[0];
-      // find next: smallest num > currentNum
       const next = navItems
         .filter((i) => i.num !== null && (i.num as number) > (currentNum as number))
         .sort((a, b) => (a.num as number) - (b.num as number))[0];
@@ -672,69 +492,148 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
       prevChapter = prev ? resolveUrl(prev.href) : undefined;
       nextChapter = next ? resolveUrl(next.href) : undefined;
     } else {
-      // Fallback to original ordering if numbers not parseable
       prevChapter = chapterNav[0] ? resolveUrl(chapterNav[0]) : undefined;
       nextChapter = chapterNav.length > 1 ? resolveUrl(chapterNav[chapterNav.length - 1]) : undefined;
     }
 
     const seriesSlug = extractSlug(path || url);
     return { title, chapter, images, prevChapter, nextChapter, mangaSlug: seriesSlug };
-  } catch (error: unknown) {
-    const err = error as { message?: string };
-    console.error("Error scraping chapter pages:", err.message);
+  } catch (error: any) {
+    console.error("Error scraping chapter pages:", error.message);
     return null;
   }
 }
 
 export async function searchManga(query: string, page = 1): Promise<SearchResult[]> {
   try {
-    const { data: html } = await searchApi.get("/", {
-      params: { s: query, page: page > 1 ? page : undefined },
+    const { data: html } = await api.get("/", {
+      params: { s: query, post_type: "manga" },
     });
     const $ = cheerio.load(html);
 
     const results: SearchResult[] = [];
     const seen = new Set<string>();
 
-    $(".bge").each((_, el) => {
+    $(".bge, .manga-card, .ls2, .ls4").each((_, el) => {
       const $el = $(el);
-      const chapterHref = $el.find(".kan > a").attr("href") || $el.find(".bgei a").attr("href") || "";
-      const slug = extractSlug(chapterHref);
+      const link = $el.find("h3 a, h4 a, .ls2v a, a").filter((_, a) => !!$(a).attr("href")?.includes("/manga/")).first();
+      const href = link.attr("href") || "";
+      const slug = extractSlug(href);
       if (!slug || seen.has(slug)) return;
       seen.add(slug);
 
-      const title = $el.find("h3").text().trim() !== "Untitled" ? $el.find("h3").text().trim() : slugToTitle(slug);
-      const latestChapter = $el.find(".new1 a[title*='Terbaru'], .new1").last().find("span").last().text().trim();
+      const title = link.text().trim() || slugToTitle(slug);
+      const cover = getImageSrc($, $el.find("img").first().get(0));
+      const latestChapter = $el.find(".new1 a, .ls2j a").first().text().trim();
 
       results.push({
         id: slug,
         title,
-        cover: "",
-        type: latestChapter || undefined,
+        cover: fixImageUrl(cover),
+        latestChapter,
       });
     });
 
     return results;
-  } catch (error: unknown) {
-    const err = error as { message?: string };
-    console.error("Error searching manga:", err.message);
+  } catch (error: any) {
+    console.error("Error searching manga:", error.message);
     return [];
+  }
+}
+
+export async function getMangaList(filters: MangaListFilters): Promise<MangaListResponse> {
+  try {
+    const params = new URLSearchParams();
+    if (filters.tipe) params.append("tipe", filters.tipe);
+    if (filters.genre) params.append("genre", filters.genre);
+    if (filters.genre2) params.append("genre2", filters.genre2);
+    if (filters.status) params.append("status", filters.status);
+    if (filters.orderby) params.append("orderby", filters.orderby);
+    if (filters.halaman) params.append("halaman", filters.halaman.toString());
+    if (filters.s) {
+      params.append("s", filters.s);
+      params.append("post_type", "manga");
+    }
+
+    const isSearch = !!filters.s;
+    const isPustaka = filters.genre || filters.genre2 || filters.orderby;
+
+    let finalUrl = `/daftar-komik/`;
+    if (isSearch) {
+        finalUrl = `/?${params.toString()}`;
+    } else if (isPustaka) {
+        finalUrl = `/pustaka/?${params.toString()}`;
+    } else {
+        const dParams = new URLSearchParams();
+        if (filters.tipe) dParams.append("tipe", filters.tipe);
+        if (filters.status) dParams.append("status", filters.status);
+        if (filters.halaman) dParams.append("halaman", filters.halaman.toString());
+        finalUrl = `/daftar-komik/?${dParams.toString()}`;
+    }
+
+    const { data: html } = await api.get(finalUrl);
+    const $ = cheerio.load(html);
+
+    const manga: MangaItem[] = [];
+    const seen = new Set<string>();
+
+    $(".manga-card, .bge, .ls2, .ls4").each((_, el) => {
+      const $el = $(el);
+      const link = $el.find("h3 a, h4 a, .ls2v a, a").filter((_, a) => !!$(a).attr("href")?.includes("/manga/")).first();
+      const href = link.attr("href") || "";
+      const slug = extractSlug(href);
+      if (!slug || seen.has(slug)) return;
+      seen.add(slug);
+
+      const title = link.text().trim() || slugToTitle(slug);
+      const cover = getImageSrc($, $el.find("img").first().get(0));
+      const typeStatus = $el.find(".meta, .ls4s").text().trim();
+
+      manga.push({
+        id: slug,
+        title,
+        cover: fixImageUrl(cover),
+        type: typeStatus.split("•")[0]?.trim() || undefined,
+        status: typeStatus.includes("Status:") ? typeStatus.split("Status:")[1]?.trim() : undefined,
+      });
+    });
+
+    const pagination = {
+      currentPage: filters.halaman || 1,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPrevPage: (filters.halaman || 1) > 1,
+    };
+
+    const nextLink = $(".pagination a:contains('Next'), .pagination a:contains('→')").attr("href");
+    if (nextLink) pagination.hasNextPage = true;
+
+    const totalPagesMatch = $(".pagination a, .pagination span").last().text().match(/\d+/);
+    if (totalPagesMatch) pagination.totalPages = parseInt(totalPagesMatch[0]);
+
+    return { manga, pagination };
+  } catch (error: any) {
+    console.error("Error fetching manga list:", error.message);
+    return {
+      manga: [],
+      pagination: { currentPage: 1, totalPages: 1, hasNextPage: false, hasPrevPage: false },
+    };
   }
 }
 
 export async function getGenreList(): Promise<{ name: string; slug: string }[]> {
   try {
-    const { data: html } = await api.get("/");
+    const { data: html } = await api.get("/pustaka/");
     const $ = cheerio.load(html);
     const genres: { name: string; slug: string }[] = [];
     const seen = new Set<string>();
 
-    $("section.Genre a, section[id='Genre'] a, a[href*='/genre/']").each((_, el) => {
-      const name = $(el).text().trim();
-      const slug = $(el).attr("href") || "";
-      if (name && name.length < 30 && !seen.has(name)) {
+    $("select[name='genre'] option").each((_, el) => {
+      const name = $(el).text().replace(/\(\d+\)/, "").trim();
+      const value = $(el).attr("value") || "";
+      if (name && value && !seen.has(name) && name !== "Genre 1") {
         seen.add(name);
-        genres.push({ name, slug });
+        genres.push({ name, slug: value });
       }
     });
     return genres;
