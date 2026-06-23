@@ -33,6 +33,11 @@ function uniqueManga(items: MangaItem[] = []) {
 export default function Home() {
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [latestLoading, setLatestLoading] = useState(true);
+  const [latestManga, setLatestManga] = useState<MangaItem[]>([]);
+  const [latestPage, setLatestPage] = useState(1);
+  const [latestTotalPages, setLatestTotalPages] = useState(1);
+  const [latestHasNextPage, setLatestHasNextPage] = useState(false);
   const [activeTab, setActiveTab] = useState<"project" | "mirror">("project");
   const [popularTab, setPopularTab] = useState<"daily" | "weekly" | "all">("daily");
 
@@ -46,6 +51,37 @@ export default function Home() {
       .catch(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    setLatestLoading(true);
+    const params = new URLSearchParams({
+      orderby: "date",
+      halaman: latestPage.toString(),
+    });
+
+    fetch(`/api/manga?${params.toString()}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Failed to fetch latest manga");
+        return res.json();
+      })
+      .then((d) => {
+        const manga = uniqueManga(d.manga || []).slice(0, 10);
+        const pagination = d.pagination || {};
+        const totalPages = pagination.totalPages || latestPage;
+
+        setLatestManga(manga);
+        setLatestTotalPages(Math.max(1, totalPages));
+        setLatestHasNextPage(Boolean(pagination.hasNextPage) || latestPage < totalPages);
+        setLatestLoading(false);
+      })
+      .catch((error) => {
+        console.error("Home latest fetch error:", error);
+        setLatestManga([]);
+        setLatestTotalPages(1);
+        setLatestHasNextPage(false);
+        setLatestLoading(false);
+      });
+  }, [latestPage]);
+
   const safeData = useMemo<HomeData | null>(() => {
     if (!data) return null;
 
@@ -56,6 +92,8 @@ export default function Home() {
       popular: uniqueManga(data.popular).slice(0, 12),
     };
   }, [data]);
+
+  const visibleUpdates = latestManga.length > 0 ? latestManga : safeData?.updates || [];
 
   return (
     <div className="relative min-h-screen bg-background overflow-hidden flex flex-col">
@@ -131,8 +169,19 @@ export default function Home() {
               </div>
 
               <div className="bg-card-bg/40 rounded-3xl border border-white/5 p-2 backdrop-blur-sm divide-y divide-white/5">
-                {safeData.updates.length > 0 ? (
-                  safeData.updates.map((manga) => (
+                {latestLoading ? (
+                  Array.from({ length: 10 }).map((_, i) => (
+                    <div key={i} className="flex gap-4 p-3">
+                      <div className="skeleton w-20 h-28 shrink-0" />
+                      <div className="flex-1 space-y-3 py-2">
+                        <div className="skeleton h-4 w-3/4" />
+                        <div className="skeleton h-3 w-1/2" />
+                        <div className="skeleton h-6 w-24" />
+                      </div>
+                    </div>
+                  ))
+                ) : visibleUpdates.length > 0 ? (
+                  visibleUpdates.slice(0, 10).map((manga) => (
                     <MangaCard key={manga.id} {...manga} />
                   ))
                 ) : (
@@ -142,9 +191,26 @@ export default function Home() {
                 )}
               </div>
 
-              <a href="/explore?orderby=date" className="block text-center w-full mt-6 py-3 rounded-2xl border border-white/5 bg-white/5 text-muted hover:text-white hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all">
-                Muat Lebih Banyak
-              </a>
+              <div className="flex items-center justify-center gap-4 mt-6">
+                <button
+                  disabled={latestPage === 1 || latestLoading}
+                  onClick={() => setLatestPage((p) => Math.max(1, p - 1))}
+                  className="px-5 py-3 rounded-2xl border border-white/5 bg-white/5 text-white disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all"
+                >
+                  Prev
+                </button>
+                <div className="flex flex-col items-center min-w-16">
+                  <span className="text-white font-black text-sm italic">{latestPage}</span>
+                  {latestTotalPages > 1 && <span className="text-muted text-[10px] font-bold uppercase tracking-tighter">dari {latestTotalPages}</span>}
+                </div>
+                <button
+                  disabled={!latestHasNextPage || latestLoading}
+                  onClick={() => setLatestPage((p) => p + 1)}
+                  className="px-5 py-3 rounded-2xl bg-primary text-white disabled:opacity-20 disabled:cursor-not-allowed hover:bg-primary-hover text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-primary/20"
+                >
+                  Next
+                </button>
+              </div>
             </section>
 
             <section className="py-6">
