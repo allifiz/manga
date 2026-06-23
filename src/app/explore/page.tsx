@@ -72,77 +72,122 @@ export default function ExplorePage() {
     setPage(1);
   };
 
+  const types = [
+    { label: "Semua", value: "" },
+    { label: "Manga", value: "manga" },
+    { label: "Manhwa", value: "manhwa" },
+    { label: "Manhua", value: "manhua" },
+  ];
+
+  const statuses = [
+    { label: "Semua", value: "" },
+    { label: "Ongoing", value: "ongoing" },
+    { label: "Tamat", value: "end" },
+  ];
+
+  const orders = [
+    { label: "Default", value: "" },
+    { label: "Terbaru", value: "date" },
+    { label: "Update", value: "modified" },
+    { label: "Populer", value: "meta_value_num" },
+    { label: "Acak", value: "rand" },
+  ];
+
   return (
-    <main className="flex-1 max-w-4xl mx-auto w-full pb-20 px-4">
-      <div className="py-4">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-white font-bold text-2xl">Explore</h1>
-          <button onClick={resetFilters} className="text-xs text-purple-400 hover:text-purple-300">
+    <main className="flex-1 max-w-4xl mx-auto w-full pb-32 px-4">
+      <div className="py-6">
+        <div className="flex items-center justify-between mb-8 px-1">
+          <h1 className="text-white font-black text-3xl tracking-tight">Explore</h1>
+          <button onClick={resetFilters} className="text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary-hover transition-colors bg-primary/10 px-4 py-2 rounded-xl">
             Reset Filter
           </button>
         </div>
 
         {/* Filter Controls */}
-        <div className="space-y-4 mb-8 bg-[#121212] p-4 rounded-xl border border-white/5">
-          {/* Tipe & Status & Order */}
-          <div className="grid grid-cols-3 gap-3">
-            <select
-              value={activeType}
-              onChange={(e) => {
-                setActiveType(e.target.value);
-                setPage(1);
-              }}
-              className="bg-[#1A1A1A] text-gray-300 text-xs py-2 px-3 rounded-lg outline-none border border-white/5 focus:border-purple-600"
-            >
-              <option value="">Semua Tipe</option>
-              <option value="manga">Manga</option>
-              <option value="manhwa">Manhwa</option>
-              <option value="manhua">Manhua</option>
-            </select>
+        <div className="space-y-6 mb-10 bg-card-bg/40 p-6 rounded-3xl border border-white/5 backdrop-blur-md">
+          {/* Tipe Filter */}
+          <div>
+            <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Tipe</p>
+            <div className="flex flex-wrap gap-2">
+              {types.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => {
+                    setActiveType(t.value);
+                    setPage(1);
+                  }}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
+                    activeType === t.value
+                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                    : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-            <select
-              value={activeStatus}
-              onChange={(e) => {
-                setActiveStatus(e.target.value);
-                setPage(1);
-              }}
-              className="bg-[#1A1A1A] text-gray-300 text-xs py-2 px-3 rounded-lg outline-none border border-white/5 focus:border-purple-600"
-            >
-              <option value="">Semua Status</option>
-              <option value="ongoing">Ongoing</option>
-              <option value="end">Tamat</option>
-            </select>
+          {/* Status Filter */}
+          <div>
+            <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Status</p>
+            <div className="flex flex-wrap gap-2">
+              {statuses.map((s) => (
+                <button
+                  key={s.value}
+                  onClick={() => {
+                    setActiveStatus(s.value);
+                    setPage(1);
+                  }}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
+                    activeStatus === s.value
+                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                    : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-            <select
-              value={activeOrder}
-              onChange={(e) => {
-                setActiveOrder(e.target.value);
-                setPage(1);
-              }}
-              className="bg-[#1A1A1A] text-gray-300 text-xs py-2 px-3 rounded-lg outline-none border border-white/5 focus:border-purple-600"
-            >
-              <option value="">Default Order</option>
-              <option value="date">Judul Baru</option>
-              <option value="modified">Update Baru</option>
-              <option value="meta_value_num">Populer</option>
-              <option value="rand">Acak</option>
-            </select>
+          {/* Order Filter */}
+          <div>
+            <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Urutkan</p>
+            <div className="flex flex-wrap gap-2">
+              {orders.map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => {
+                    setActiveOrder(o.value);
+                    setPage(1);
+                  }}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
+                    activeOrder === o.value
+                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                    : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Genre Filter */}
           <div>
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 font-bold">Genre</p>
-            <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-2">
+            <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Genre</p>
+            <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
               <button
                 onClick={() => {
                   setActiveGenre("");
                   setPage(1);
                 }}
-                className={`px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-colors flex-shrink-0 ${
-                  activeGenre === "" ? "bg-purple-600 text-white" : "bg-[#1A1A1A] text-gray-400 hover:text-white"
+                className={`px-5 py-2 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex-shrink-0 ${
+                  activeGenre === "" ? "bg-primary text-white shadow-lg shadow-primary/20" : "bg-white/5 text-muted hover:text-white"
                 }`}
               >
-                Semua
+                Semua Genre
               </button>
               {genres.map((genre) => (
                 <button
@@ -151,8 +196,8 @@ export default function ExplorePage() {
                     setActiveGenre(genre.slug);
                     setPage(1);
                   }}
-                  className={`px-4 py-1.5 text-xs rounded-full whitespace-nowrap transition-colors flex-shrink-0 ${
-                    activeGenre === genre.slug ? "bg-purple-600 text-white" : "bg-[#1A1A1A] text-gray-400 hover:text-white"
+                  className={`px-5 py-2 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex-shrink-0 ${
+                    activeGenre === genre.slug ? "bg-primary text-white shadow-lg shadow-primary/20" : "bg-white/5 text-muted hover:text-white"
                   }`}
                 >
                   {genre.name}
@@ -164,58 +209,59 @@ export default function ExplorePage() {
 
         {/* Manga Grid */}
         {loading ? (
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6">
             {Array.from({ length: 18 }).map((_, i) => (
-              <div key={i}>
-                <div className="skeleton aspect-[3/4] rounded-xl mb-2 shadow-lg" />
-                <div className="skeleton h-3 w-full rounded" />
+              <div key={i} className="space-y-3">
+                <div className="skeleton aspect-[3/4.5] w-full shadow-2xl" />
+                <div className="skeleton h-3.5 w-full rounded-lg" />
               </div>
             ))}
           </div>
         ) : manga.length > 0 ? (
           <>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6 animate-fade-in">
               {manga.map((item, idx) => (
                 <MangaCard
                   key={idx}
                   {...item}
-                  chapters={[]} // getMangaList doesn't return chapters for simplicity
+                  chapters={[]}
                   variant="vertical"
                 />
               ))}
             </div>
 
             {/* Pagination */}
-            <div className="flex items-center justify-center gap-4 mt-12 pt-8 border-t border-white/5">
+            <div className="flex items-center justify-center gap-6 mt-16 pt-10 border-t border-white/5">
               <button
                 disabled={page === 1}
                 onClick={() => setPage((p) => p - 1)}
-                className="px-6 py-2 bg-[#1A1A1A] text-white rounded-xl text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-purple-600 transition-all border border-white/5 shadow-lg"
+                className="px-6 py-3 bg-white/5 text-white font-black text-xs uppercase tracking-widest rounded-2xl disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/10 transition-all border border-white/5"
               >
-                Sebelumnya
+                Prev
               </button>
               <div className="flex flex-col items-center">
-                <span className="text-white font-bold text-sm">Halaman {page}</span>
-                {totalPages > 1 && <span className="text-gray-500 text-[10px]">dari {totalPages}</span>}
+                <span className="text-white font-black text-base italic">{page}</span>
+                {totalPages > 1 && <span className="text-muted text-[10px] font-bold uppercase tracking-tighter">dari {totalPages}</span>}
               </div>
               <button
                 disabled={!hasNextPage}
                 onClick={() => setPage((p) => p + 1)}
-                className="px-6 py-2 bg-purple-600 text-white rounded-xl text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-purple-700 transition-all shadow-[0_0_20px_rgba(147,51,234,0.3)]"
+                className="px-6 py-3 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-2xl disabled:opacity-20 disabled:cursor-not-allowed hover:bg-primary-hover shadow-lg shadow-primary/20 transition-all"
               >
-                Selanjutnya
+                Next
               </button>
             </div>
           </>
         ) : (
-          <div className="text-center py-24 bg-[#121212] rounded-3xl border border-white/5">
-            <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-10 h-10 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="text-center py-32 bg-card-bg/20 rounded-[40px] border border-white/5 backdrop-blur-sm">
+            <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-white/5">
+              <svg className="w-12 h-12 text-muted/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
-            <p className="text-gray-400 text-sm">Tidak ada manga ditemukan dengan filter ini</p>
-            <button onClick={resetFilters} className="mt-4 text-purple-400 text-sm font-medium hover:underline">Reset semua filter</button>
+            <p className="text-white font-bold text-lg mb-2">Pustaka Kosong</p>
+            <p className="text-muted text-sm mb-6">Tidak ada manga ditemukan dengan filter ini</p>
+            <button onClick={resetFilters} className="text-primary font-black text-xs uppercase tracking-widest hover:underline underline-offset-8 transition-all">Reset semua filter</button>
           </div>
         )}
       </div>

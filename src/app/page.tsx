@@ -37,22 +37,25 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="relative min-h-screen bg-[#050508] overflow-hidden flex flex-col">
-      {/* Background Neon Glows */}
-      <div className="absolute top-[-20%] left-[-20%] w-[70%] h-[70%] rounded-full bg-primary/5 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] rounded-full bg-purple-900/5 blur-[120px] pointer-events-none" />
+    <div className="relative min-h-screen bg-background overflow-hidden flex flex-col">
+      {/* Background Decor */}
+      <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-primary/10 to-transparent pointer-events-none" />
+      <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px] pointer-events-none animate-pulse" />
 
-      <main className="flex-1 max-w-2xl mx-auto w-full pb-24 z-10">
+      <main className="flex-1 max-w-2xl mx-auto w-full pb-32 z-10">
         {loading ? (
           <LoadingSkeleton />
         ) : data ? (
-          <>
-            {/* Featured Carousel */}
+          <div className="animate-fade-in">
+            {/* Hero Section / Featured */}
             {data.featured.length > 0 && (
               <section className="px-4 py-6">
-                <div className="space-y-4">
-                  {data.featured.slice(0, 3).map((manga, idx) => (
-                    <div key={idx} className="glass-card rounded-2xl overflow-hidden shadow-lg border border-border/50">
+                <div className="flex items-center justify-between mb-4 px-1">
+                  <h2 className="text-white font-black text-xl tracking-tight">Eksklusif Hari Ini</h2>
+                </div>
+                <div className="space-y-6">
+                  {data.featured.slice(0, 2).map((manga, idx) => (
+                    <div key={idx} className="animate-fade-in" style={{ animationDelay: `${idx * 150}ms` }}>
                       <MangaCard {...manga} variant="featured" />
                     </div>
                   ))}
@@ -60,30 +63,20 @@ export default function Home() {
               </section>
             )}
 
-            {/* Recommendations */}
+            {/* Recommendations - Horizontal Scroll */}
             {data.recommendations.length > 0 && (
-              <section className="px-4 py-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-white font-bold text-base relative pl-3 before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-4 before:bg-primary before:rounded-full">
-                    Rekomendasi Pilihan
-                  </h2>
-                  <div className="flex gap-1.5">
-                    {["Manhwa", "Manga", "Manhua"].map((tab) => (
-                      <button
-                        key={tab}
-                        className="px-3 py-1 text-[11px] rounded-full bg-white/5 hover:bg-white/10 text-muted hover:text-white transition-all duration-200"
-                      >
-                        {tab}
-                      </button>
-                    ))}
-                  </div>
+              <section className="py-6">
+                <div className="px-5 flex items-center justify-between mb-5">
+                  <h2 className="section-title">Rekomendasi Pilihan</h2>
+                  <button className="text-[11px] font-black uppercase tracking-widest text-primary hover:text-primary-hover transition-colors">
+                    Lihat Semua
+                  </button>
                 </div>
-                <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-3">
+                <div className="flex gap-4 overflow-x-auto hide-scrollbar px-5 pb-2">
                   {data.recommendations.map((manga, idx) => (
                     <div
                       key={idx}
-                      className="w-32 flex-shrink-0 animate-fade-in"
-                      style={{ animationDelay: `${idx * 50}ms` }}
+                      className="w-32 flex-shrink-0"
                     >
                       <MangaCard {...manga} variant="vertical" />
                     </div>
@@ -92,18 +85,16 @@ export default function Home() {
               </section>
             )}
 
-            {/* Update Section */}
-            <section className="px-4 py-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-white font-bold text-base relative pl-3 before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-4 before:bg-primary before:rounded-full">
-                  Update Terbaru
-                </h2>
-                <div className="flex p-0.5 rounded-full bg-white/5 border border-white/5">
+            {/* Update Section - List */}
+            <section className="px-4 py-6">
+              <div className="flex items-center justify-between mb-6 px-1">
+                <h2 className="section-title">Update Terbaru</h2>
+                <div className="flex p-1 rounded-2xl bg-white/5 border border-white/5 backdrop-blur-md">
                   <button
                     onClick={() => setActiveTab("project")}
-                    className={`px-4 py-1.5 text-xs font-semibold rounded-full transition-all duration-200 ${
+                    className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${
                       activeTab === "project"
-                        ? "bg-primary text-white shadow-[0_2px_10px_rgba(139,92,246,0.3)]"
+                        ? "bg-primary text-white shadow-lg shadow-primary/30"
                         : "text-muted hover:text-white"
                     }`}
                   >
@@ -111,9 +102,9 @@ export default function Home() {
                   </button>
                   <button
                     onClick={() => setActiveTab("mirror")}
-                    className={`px-4 py-1.5 text-xs font-semibold rounded-full transition-all duration-200 ${
+                    className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${
                       activeTab === "mirror"
-                        ? "bg-primary text-white shadow-[0_2px_10px_rgba(139,92,246,0.3)]"
+                        ? "bg-primary text-white shadow-lg shadow-primary/30"
                         : "text-muted hover:text-white"
                     }`}
                   >
@@ -121,66 +112,57 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-              <div className="divide-y divide-border/60">
+
+              <div className="bg-card-bg/40 rounded-3xl border border-white/5 p-2 backdrop-blur-sm divide-y divide-white/5">
                 {data.updates.length > 0 ? (
                   data.updates.map((manga, idx) => (
-                    <div key={idx} className="hover:bg-white/[0.01] px-1 transition-all duration-150">
-                      <MangaCard {...manga} />
-                    </div>
+                    <MangaCard key={idx} {...manga} />
                   ))
                 ) : (
-                  <p className="text-muted text-sm py-8 text-center bg-card-bg/40 rounded-2xl border border-border">
-                    Tidak ada data update
-                  </p>
+                  <div className="py-12 text-center">
+                    <p className="text-muted text-sm italic">Tidak ada data update tersedia</p>
+                  </div>
                 )}
               </div>
+
+              <button className="w-full mt-6 py-3 rounded-2xl border border-white/5 bg-white/5 text-muted hover:text-white hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all">
+                Muat Lebih Banyak
+              </button>
             </section>
 
-            {/* Popular Section */}
-            <section className="px-4 py-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-white font-bold text-base relative pl-3 before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-4 before:bg-primary before:rounded-full">
-                  Populer Hari Ini
-                </h2>
-                <div className="flex p-0.5 rounded-full bg-white/5 border border-white/5">
-                  {[
-                    { key: "daily", label: "Hari" },
-                    { key: "weekly", label: "Minggu" },
-                    { key: "all", label: "Semua" },
-                  ].map((tab) => (
+            {/* Popular Section - Grid */}
+            <section className="py-6">
+              <div className="px-5 flex items-center justify-between mb-6">
+                <h2 className="section-title">Populer Hari Ini</h2>
+                <div className="flex gap-1.5">
+                  {["daily", "weekly", "all"].map((tab) => (
                     <button
-                      key={tab.key}
-                      onClick={() => setPopularTab(tab.key as typeof popularTab)}
-                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-full transition-all duration-200 ${
-                        popularTab === tab.key
-                          ? "bg-primary text-white shadow-[0_2px_10px_rgba(139,92,246,0.3)]"
+                      key={tab}
+                      onClick={() => setPopularTab(tab as typeof popularTab)}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter transition-all ${
+                        popularTab === tab
+                          ? "bg-white/10 text-primary"
                           : "text-muted hover:text-white"
                       }`}
                     >
-                      {tab.label}
+                      {tab === "daily" ? "Hari" : tab === "weekly" ? "Minggu" : "Semua"}
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-3">
+              <div className="grid grid-cols-3 gap-4 px-5">
                 {data.popular.length > 0 ? (
-                  data.popular.map((manga, idx) => (
-                    <div
-                      key={idx}
-                      className="w-32 flex-shrink-0 animate-fade-in"
-                      style={{ animationDelay: `${idx * 50}ms` }}
-                    >
-                      <MangaCard {...manga} variant="vertical" />
-                    </div>
+                  data.popular.slice(0, 9).map((manga, idx) => (
+                    <MangaCard key={idx} {...manga} variant="vertical" />
                   ))
                 ) : (
-                  <p className="text-muted text-sm py-8 text-center bg-card-bg/40 rounded-2xl border border-border w-full">
-                    Tidak ada data populer
-                  </p>
+                  <div className="col-span-3 py-10 text-center bg-white/5 rounded-3xl border border-white/5">
+                    <p className="text-muted text-sm italic">Data tidak ditemukan</p>
+                  </div>
                 )}
               </div>
             </section>
-          </>
+          </div>
         ) : (
           <ErrorState />
         )}
@@ -191,15 +173,34 @@ export default function Home() {
 
 function LoadingSkeleton() {
   return (
-    <div className="px-4 py-4 space-y-4">
-      <div className="skeleton h-40 w-full" />
-      <div className="space-y-3">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="flex gap-3">
-            <div className="skeleton w-20 h-28 flex-shrink-0" />
-            <div className="flex-1 space-y-2">
+    <div className="px-4 py-8 space-y-8">
+      <div className="skeleton h-64 w-full" />
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <div className="skeleton h-6 w-32" />
+          <div className="skeleton h-4 w-20" />
+        </div>
+        <div className="flex gap-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="w-32 space-y-2 shrink-0">
+              <div className="skeleton aspect-[3/4.5] w-full" />
+              <div className="skeleton h-3 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-4">
+        <div className="skeleton h-6 w-40" />
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="flex gap-4">
+            <div className="skeleton w-22 h-30 shrink-0" />
+            <div className="flex-1 space-y-2 py-2">
               <div className="skeleton h-4 w-3/4" />
               <div className="skeleton h-3 w-1/2" />
+              <div className="flex gap-2">
+                <div className="skeleton h-6 w-16" />
+                <div className="skeleton h-6 w-16" />
+              </div>
             </div>
           </div>
         ))}
@@ -210,22 +211,24 @@ function LoadingSkeleton() {
 
 function ErrorState() {
   return (
-    <div className="flex flex-col items-center justify-center py-20 px-4">
-      <svg className="w-16 h-16 text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={1}
-          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
-        />
-      </svg>
-      <h3 className="text-white font-semibold text-lg mb-2">Gagal Memuat Data</h3>
-      <p className="text-gray-500 text-sm text-center mb-4">
-        Terjadi kesalahan saat memuat data. Pastikan server berjalan.
+    <div className="flex flex-col items-center justify-center py-24 px-4 text-center">
+      <div className="w-20 h-20 bg-accent-red/10 rounded-full flex items-center justify-center mb-6 border border-accent-red/20 shadow-[0_0_30px_rgba(239,68,68,0.1)]">
+        <svg className="w-10 h-10 text-accent-red" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
+          />
+        </svg>
+      </div>
+      <h3 className="text-white font-black text-xl mb-3">Gagal Memuat Data</h3>
+      <p className="text-muted text-sm max-w-xs mx-auto mb-8">
+        Terjadi kesalahan saat menghubungi server. Periksa koneksi internet Anda.
       </p>
       <button
         onClick={() => window.location.reload()}
-        className="px-6 py-2 bg-purple-600 text-white rounded-full text-sm hover:bg-purple-700 transition-colors"
+        className="px-8 py-3 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-primary-hover shadow-lg shadow-primary/20 transition-all"
       >
         Coba Lagi
       </button>
