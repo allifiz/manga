@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
-    const results = await searchManga(query, page);
+    const results = await searchManga(query);
     return NextResponse.json({ results });
   } catch (error) {
     console.error("API Error:", error);
