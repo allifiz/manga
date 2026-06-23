@@ -20,13 +20,6 @@ function SearchContent() {
   const [loading, setLoading] = useState(false);
   const [searchInput, setSearchInput] = useState(query);
 
-  useEffect(() => {
-    if (query) {
-      setSearchInput(query);
-      performSearch(query);
-    }
-  }, [query]);
-
   const performSearch = (q: string) => {
     setLoading(true);
     fetch(`/api/search?q=${encodeURIComponent(q)}`)
@@ -37,6 +30,13 @@ function SearchContent() {
       })
       .catch(() => setLoading(false));
   };
+
+  useEffect(() => {
+    if (query) {
+      setSearchInput(query);
+      performSearch(query);
+    }
+  }, [query]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,0 +1,16 @@
+
+> manga@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+✓ Ready in 560ms
+
+ GET / 200 in 616ms (next.js: 304ms, application-code: 312ms)
+ GET /api/home 200 in 1399ms (next.js: 371ms, application-code: 1027ms)
+ GET /search 200 in 83ms (next.js: 28ms, application-code: 55ms)
+Error searching manga: Request failed with status code 403
+ GET /api/search?q=Solo%20Leveling 200 in 125ms (next.js: 53ms, application-code: 71ms)
+Error searching manga: Request failed with status code 403
+ GET /api/search?q=Solo%20Leveling 200 in 32ms (next.js: 4ms, application-code: 28ms)
