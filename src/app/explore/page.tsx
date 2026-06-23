@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import MangaCard from "@/components/MangaCard";
 
 interface MangaItem {
@@ -24,7 +24,6 @@ export default function ExplorePage() {
   const [totalPages, setTotalPages] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
 
-  // Filters
   const [activeGenre, setActiveGenre] = useState("");
   const [activeType, setActiveType] = useState("");
   const [activeStatus, setActiveStatus] = useState("");
@@ -33,19 +32,27 @@ export default function ExplorePage() {
   const fetchManga = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (activeGenre) params.append("genre", activeGenre);
-    if (activeType) params.append("tipe", activeType);
-    if (activeStatus) params.append("status", activeStatus);
-    if (activeOrder) params.append("orderby", activeOrder);
-    params.append("page", page.toString());
+
+    if (activeGenre) params.set("genre", activeGenre);
+    if (activeType) params.set("tipe", activeType);
+    if (activeStatus) params.set("status", activeStatus);
+    if (activeOrder) params.set("orderby", activeOrder);
+    params.set("halaman", page.toString());
 
     fetch(`/api/manga?${params.toString()}`)
       .then((res) => res.json())
       .then((d) => {
-        setManga(d.manga || []);
+        const seen = new Set<string>();
+        const uniqueManga = (d.manga || []).filter((item: MangaItem) => {
+          if (!item.id || seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        });
+
+        setManga(uniqueManga);
         if (d.pagination) {
-          setTotalPages(d.pagination.totalPages);
-          setHasNextPage(d.pagination.hasNextPage);
+          setTotalPages(d.pagination.totalPages || 1);
+          setHasNextPage(Boolean(d.pagination.hasNextPage));
         }
         setLoading(false);
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -103,9 +110,7 @@ export default function ExplorePage() {
           </button>
         </div>
 
-        {/* Filter Controls */}
         <div className="space-y-6 mb-10 bg-card-bg/40 p-6 rounded-3xl border border-white/5 backdrop-blur-md">
-          {/* Tipe Filter */}
           <div>
             <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Tipe</p>
             <div className="flex flex-wrap gap-2">
@@ -118,8 +123,8 @@ export default function ExplorePage() {
                   }}
                   className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
                     activeType === t.value
-                    ? "bg-primary text-white shadow-lg shadow-primary/20"
-                    : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                      ? "bg-primary text-white shadow-lg shadow-primary/20"
+                      : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
                   }`}
                 >
                   {t.label}
@@ -128,7 +133,6 @@ export default function ExplorePage() {
             </div>
           </div>
 
-          {/* Status Filter */}
           <div>
             <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Status</p>
             <div className="flex flex-wrap gap-2">
@@ -141,8 +145,8 @@ export default function ExplorePage() {
                   }}
                   className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
                     activeStatus === s.value
-                    ? "bg-primary text-white shadow-lg shadow-primary/20"
-                    : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                      ? "bg-primary text-white shadow-lg shadow-primary/20"
+                      : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
                   }`}
                 >
                   {s.label}
@@ -151,7 +155,6 @@ export default function ExplorePage() {
             </div>
           </div>
 
-          {/* Order Filter */}
           <div>
             <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Urutkan</p>
             <div className="flex flex-wrap gap-2">
@@ -164,8 +167,8 @@ export default function ExplorePage() {
                   }}
                   className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
                     activeOrder === o.value
-                    ? "bg-primary text-white shadow-lg shadow-primary/20"
-                    : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                      ? "bg-primary text-white shadow-lg shadow-primary/20"
+                      : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
                   }`}
                 >
                   {o.label}
@@ -174,7 +177,6 @@ export default function ExplorePage() {
             </div>
           </div>
 
-          {/* Genre Filter */}
           <div>
             <p className="text-[10px] text-muted uppercase tracking-widest mb-3 font-black">Genre</p>
             <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
@@ -207,7 +209,6 @@ export default function ExplorePage() {
           </div>
         </div>
 
-        {/* Manga Grid */}
         {loading ? (
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6">
             {Array.from({ length: 18 }).map((_, i) => (
@@ -220,9 +221,9 @@ export default function ExplorePage() {
         ) : manga.length > 0 ? (
           <>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6 animate-fade-in">
-              {manga.map((item, idx) => (
+              {manga.map((item) => (
                 <MangaCard
-                  key={idx}
+                  key={item.id}
                   {...item}
                   chapters={[]}
                   variant="vertical"
@@ -230,7 +231,6 @@ export default function ExplorePage() {
               ))}
             </div>
 
-            {/* Pagination */}
             <div className="flex items-center justify-center gap-6 mt-16 pt-10 border-t border-white/5">
               <button
                 disabled={page === 1}
