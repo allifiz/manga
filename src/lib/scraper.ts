@@ -6,6 +6,7 @@ const API_BASE_URL = (
   "https://www.sankavollerei.web.id"
 ).replace(/\/+$/, "");
 
+const API_PREFIX = "/comic/komikindo";
 const PAGE_SIZE = 10;
 const PLACEHOLDER_COVER = "https://via.placeholder.com/300x450/1A1A1A/666?text=No+Cover";
 
@@ -86,6 +87,7 @@ export interface MangaListResponse {
 type ApiRecord = Record<string, unknown>;
 type QueryValue = string | number | boolean | undefined;
 type QueryParams = Record<string, QueryValue>;
+type DetailChapter = MangaDetail["chapters"][number];
 
 function createClient(baseURL: string): AxiosInstance {
   return axios.create({
@@ -104,6 +106,10 @@ const api = createClient(API_BASE_URL);
 
 function isRecord(value: unknown): value is ApiRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined;
 }
 
 function asString(value: unknown): string {
@@ -172,6 +178,19 @@ function firstArray(record: ApiRecord, keys: string[]): unknown[] {
   return [];
 }
 
+function unwrapData(payload: unknown): unknown {
+  if (!isRecord(payload)) return payload;
+  for (const key of ["data", "result", "results", "items", "comics", "comic", "manga", "list"]) {
+    const value = payload[key];
+    if (Array.isArray(value)) return value;
+    if (isRecord(value)) {
+      const nested = unwrapData(value);
+      if (Array.isArray(nested)) return nested;
+    }
+  }
+  return payload;
+}
+
 function slugFromUrl(value: string): string {
   const clean = value.split("?")[0].replace(/\/$/, "");
   const parts = clean.split("/").filter(Boolean);
@@ -183,29 +202,11 @@ function itemSlug(record: ApiRecord): string {
   if (direct && !direct.startsWith("http")) return slugify(direct);
   const url = firstString(record, ["url", "link", "href", "path", "chapterUrl"]);
   if (url) return slugFromUrl(url);
-  return slugify(firstString(record, ["title", "name", "judul"]));
+  return slugify(firstString(record, ["title", "name", "judul", "comicTitle", "mangaTitle"]));
 }
 
 function chapterUrl(mangaSlug: string, chapterSlug: string): string {
   return `/komik/${mangaSlug}/${chapterSlug}`;
-}
-
-function isLikelyComicRecord(record: ApiRecord): boolean {
-  const title = firstString(record, ["title", "name", "judul", "comicTitle", "mangaTitle"]);
-  const slug = itemSlug(record);
-  const image = firstNestedString(record, [
-    ["cover"],
-    ["thumbnail"],
-    ["image"],
-    ["imageUrl"],
-    ["poster"],
-    ["coverImage"],
-    ["thumb"],
-    ["data", "cover"],
-    ["data", "thumbnail"],
-    ["data", "image"],
-  ]);
-  return Boolean(title && slug && (image || record.chapters || record.chapter || record.latestChapter));
 }
 
 function collectComicRecords(value: unknown, depth = 0): ApiRecord[] {
@@ -213,27 +214,11 @@ function collectComicRecords(value: unknown, depth = 0): ApiRecord[] {
   if (Array.isArray(value)) return value.flatMap((item) => collectComicRecords(item, depth + 1));
   if (!isRecord(value)) return [];
 
-  const containerKeys = [
-    "data",
-    "result",
-    "results",
-    "items",
-    "comics",
-    "comic",
-    "manga",
-    "manhwa",
-    "manhua",
-    "popular",
-    "latest",
-    "terbaru",
-    "recommendations",
-    "rekomendasi",
-    "list",
-  ];
+  const nested = firstArray(value, ["data", "result", "results", "items", "comics", "comic", "manga", "list"]);
+  if (nested.length) return collectComicRecords(nested, depth + 1);
 
-  const nested = containerKeys.flatMap((key) => collectComicRecords(value[key], depth + 1));
-  if (nested.length) return nested;
-  if (isLikelyComicRecord(value)) return [value];
+  const title = firstString(value, ["title", "name", "judul", "comicTitle", "mangaTitle"]);
+  if (title || itemSlug(value)) return [value];
 
   return Object.values(value).flatMap((child) => collectComicRecords(child, depth + 1));
 }
@@ -286,7 +271,7 @@ function normalizeChapters(value: unknown, mangaSlug: string): { number: string;
         url: chapterUrl(mangaSlug, slug),
       };
     })
-    .filter((chapter): chapter is { number: string; time: string; url: string } => Boolean(chapter));
+    .filter(isPresent);
 }
 
 function mangaItemFromRecord(record: ApiRecord): MangaItem | null {
@@ -317,9 +302,9 @@ function mangaItemFromRecord(record: ApiRecord): MangaItem | null {
 
 function mapItems(payload: unknown, limit = PAGE_SIZE): MangaItem[] {
   return uniqueById(
-    collectComicRecords(payload)
+    collectComicRecords(unwrapData(payload))
       .map(mangaItemFromRecord)
-      .filter((item): item is MangaItem => Boolean(item)),
+      .filter(isPresent),
   ).slice(0, limit);
 }
 
@@ -332,30 +317,27 @@ function getTotalPages(payload: unknown, currentPage: number, itemCount: number)
   return total || (itemCount >= PAGE_SIZE ? currentPage + 1 : currentPage);
 }
 
-async function tryGet(paths: string[], params?: QueryParams): Promise<unknown | null> {
-  for (const path of paths) {
-    try {
-      const { data, status, headers } = await api.get(path, { params });
-      const contentType = String(headers["content-type"] || "");
-      if (status >= 200 && status < 300 && contentType.includes("json")) return data;
-      if (status >= 200 && status < 300 && typeof data === "object") return data;
-    } catch (error) {
-      console.error(`Sankavollerei API failed: ${path}`, error);
-    }
+async function getJson(path: string, params?: QueryParams): Promise<unknown | null> {
+  try {
+    const { data, status, headers } = await api.get(path, { params });
+    const contentType = String(headers["content-type"] || "");
+    if (status >= 200 && status < 300 && (contentType.includes("json") || typeof data === "object")) return data;
+  } catch (error) {
+    console.error(`Sankavollerei Komikindo API failed: ${path}`, error);
   }
   return null;
 }
 
-function buildListParams(filters: MangaListFilters, page: number): QueryParams {
+function buildLibraryParams(filters: MangaListFilters, page: number): QueryParams {
   const params: QueryParams = { page, limit: PAGE_SIZE };
   const type = normalizeFilterValue(filters.tipe);
   const status = normalizeFilterValue(filters.status);
   const genre = normalizeFilterValue(filters.genre || filters.genre2);
-  const order = normalizeFilterValue(filters.orderby);
+  const search = filters.s?.trim();
   if (type) params.type = type;
   if (status) params.status = status;
   if (genre) params.genre = genre;
-  if (order) params.sort = order;
+  if (search) params.search = search;
   return params;
 }
 
@@ -365,22 +347,22 @@ function fallbackHome(): HomePageData {
 
 export async function getHomePage(): Promise<HomePageData> {
   try {
-    const [latest, popular] = await Promise.all([
-      tryGet(["/api/comic/latest", "/api/comic/terbaru", "/api/comic", "/comic/latest", "/comic/terbaru", "/comic"], { page: 1, limit: 20 }),
-      tryGet(["/api/comic/popular", "/api/comic/recommendation", "/api/comic/rekomendasi", "/comic/popular", "/comic/recommendation"], { page: 1, limit: 20 }),
+    const [latestPage1, latestPage2, library] = await Promise.all([
+      getJson(`${API_PREFIX}/latest/1`),
+      getJson(`${API_PREFIX}/latest/2`),
+      getJson(`${API_PREFIX}/library`, { page: 1, limit: 20 }),
     ]);
 
-    const latestItems = mapItems(latest, 20);
-    const popularItems = mapItems(popular, 12);
+    const latestItems = uniqueById([...mapItems(latestPage1, 20), ...mapItems(latestPage2, 20), ...mapItems(library, 20)]);
 
     return {
-      featured: uniqueById([...popularItems, ...latestItems]).slice(0, 5),
-      recommendations: uniqueById([...popularItems, ...latestItems]).slice(0, 6),
+      featured: latestItems.slice(0, 5),
+      recommendations: latestItems.slice(5, 11),
       updates: latestItems.slice(0, 10),
-      popular: popularItems.slice(0, 12),
+      popular: latestItems.slice(0, 12),
     };
   } catch (error) {
-    console.error("Error fetching homepage from Sankavollerei API:", error);
+    console.error("Error fetching homepage from Sankavollerei Komikindo API:", error);
     return fallbackHome();
   }
 }
@@ -391,12 +373,12 @@ function detailChapters(payload: unknown, mangaSlug: string): MangaDetail["chapt
     mangaSlug,
   );
 
-  return chapters.map((chapter, index) => ({ ...chapter, isNew: index < 3 }));
+  return chapters.map<DetailChapter>((chapter, index) => ({ ...chapter, isNew: index < 3 }));
 }
 
 function detailFromPayload(payload: unknown, slug: string): MangaDetail | null {
   const records = collectComicRecords(payload);
-  const record = records[0] || (isRecord(payload) ? payload : null);
+  const record = records[0] || (isRecord(unwrapData(payload)) ? unwrapData(payload) : null);
   if (!record) return null;
 
   const data = isRecord(record.data) ? record.data : record;
@@ -405,7 +387,7 @@ function detailFromPayload(payload: unknown, slug: string): MangaDetail | null {
   const cover =
     firstNestedString(data, [["cover"], ["thumbnail"], ["image"], ["imageUrl"], ["poster"], ["coverImage"], ["thumb"], ["img"]]) || PLACEHOLDER_COVER;
   const genreNames = normalizeGenres(data.genres || data.genre).map((name) => ({ name, slug: slugify(name) }));
-  const chapters = detailChapters(data.chapters || data.chapterList || data.episodes || payload, id);
+  const chapters = detailChapters(data.chapters || data.chapterList || data.episodes || unwrapData(payload), id);
 
   return {
     id,
@@ -427,59 +409,50 @@ function detailFromPayload(payload: unknown, slug: string): MangaDetail | null {
 
 export async function getMangaDetail(slug: string): Promise<MangaDetail | null> {
   const cleanSlug = slugify(slug);
-  const payload = await tryGet([
-    `/api/comic/${cleanSlug}`,
-    `/api/comic/detail/${cleanSlug}`,
-    `/api/comic/${cleanSlug}/detail`,
-    `/comic/${cleanSlug}`,
-    `/comic/detail/${cleanSlug}`,
-  ]);
+  const payload = await getJson(`${API_PREFIX}/detail/${cleanSlug}`);
   return detailFromPayload(payload, cleanSlug);
 }
 
-function parseChapterInput(input: string): { slug: string; chapter: string } | null {
+function parseChapterInput(input: string): string | null {
   const clean = input.trim();
-  const legacyMatch = clean.match(/\/komik\/([^/]+)\/([^/?#]+)/);
-  if (legacyMatch) return { slug: legacyMatch[1], chapter: legacyMatch[2] };
-  const comicMatch = clean.match(/\/comic\/([^/]+)\/([^/?#]+)/);
-  if (comicMatch) return { slug: comicMatch[1], chapter: comicMatch[2] };
-  const chapterMatch = clean.match(/\/([^/]+)-chapter-([^/?#]+)/i);
-  if (chapterMatch) return { slug: chapterMatch[1], chapter: chapterMatch[2] };
-  return null;
+  const legacyMatch = clean.match(/\/komik\/[^/]+\/([^/?#]+)/);
+  if (legacyMatch) return legacyMatch[1];
+  const chapterMatch = clean.match(/\/chapter\/([^/?#]+)/);
+  if (chapterMatch) return chapterMatch[1];
+  const slugMatch = clean.match(/([^/]+-chapter-[^/?#]+)/i);
+  if (slugMatch) return slugMatch[1];
+  return slugify(clean);
 }
 
 export async function getChapterPages(url: string): Promise<ChapterPage | null> {
-  const parsed = parseChapterInput(url);
-  if (!parsed) return null;
+  const chapterSlug = parseChapterInput(url);
+  if (!chapterSlug) return null;
 
   try {
-    const payload = await tryGet([
-      `/api/comic/${parsed.slug}/${parsed.chapter}`,
-      `/api/comic/${parsed.slug}/chapter/${parsed.chapter}`,
-      `/api/comic/chapter/${parsed.chapter}`,
-      `/comic/${parsed.slug}/${parsed.chapter}`,
-      `/comic/${parsed.slug}/chapter/${parsed.chapter}`,
-    ]);
+    const payload = await getJson(`${API_PREFIX}/chapter/${chapterSlug}`);
     if (!payload) return null;
 
-    const images = uniqueById(collectImageUrls(payload).map((image) => ({ id: image }))).map((item) => item.id);
+    const data = unwrapData(payload);
+    const images = uniqueById(collectImageUrls(data).map((image) => ({ id: image }))).map((item) => item.id);
+    const title = isRecord(data) ? firstString(data, ["title", "comicTitle", "mangaTitle", "name"]) : "";
+    const chapter = isRecord(data) ? firstString(data, ["chapter", "chapterTitle", "title", "name"]) : "";
+
     return {
-      title: slugToTitle(parsed.slug),
-      chapter: slugToTitle(parsed.chapter),
+      title: title || slugToTitle(chapterSlug.replace(/-chapter-.+$/i, "")),
+      chapter: chapter || slugToTitle(chapterSlug),
       images,
-      mangaSlug: parsed.slug,
+      mangaSlug: chapterSlug.replace(/-chapter-.+$/i, ""),
     };
   } catch (error) {
-    console.error("Error fetching chapter pages from Sankavollerei API:", error);
+    console.error("Error fetching chapter pages from Sankavollerei Komikindo API:", error);
     return null;
   }
 }
 
 export async function searchManga(query: string, page = 1): Promise<SearchResult[]> {
-  const payload = await tryGet(
-    ["/api/comic/search", "/api/comic", "/comic/search", "/comic"],
-    { q: query, query, keyword: query, search: query, page, limit: PAGE_SIZE },
-  );
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+  const payload = await getJson(`${API_PREFIX}/search/${encodeURIComponent(cleanQuery)}/${page}`);
 
   return mapItems(payload, PAGE_SIZE).map((item) => ({
     id: item.id,
@@ -496,30 +469,10 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
   const search = filters.s?.trim();
 
   try {
-    if (search) {
-      const results = await searchManga(search, currentPage);
-      return {
-        manga: results.map((item) => ({
-          id: item.id,
-          title: item.title,
-          cover: item.cover,
-          type: item.type,
-          rating: item.rating,
-          chapters: item.latestChapter ? [{ number: item.latestChapter, time: "", url: "" }] : [],
-        })),
-        pagination: {
-          currentPage,
-          totalPages: results.length >= PAGE_SIZE ? currentPage + 1 : currentPage,
-          hasNextPage: results.length >= PAGE_SIZE,
-          hasPrevPage: currentPage > 1,
-        },
-      };
-    }
+    const payload = search
+      ? await getJson(`${API_PREFIX}/search/${encodeURIComponent(search)}/${currentPage}`)
+      : await getJson(`${API_PREFIX}/library`, buildLibraryParams(filters, currentPage));
 
-    const payload = await tryGet(
-      ["/api/comic", "/api/comic/list", "/api/comic/latest", "/comic", "/comic/list"],
-      buildListParams(filters, currentPage),
-    );
     const manga = mapItems(payload, PAGE_SIZE);
     const totalPages = getTotalPages(payload, currentPage, manga.length);
 
@@ -533,7 +486,7 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
       },
     };
   } catch (error) {
-    console.error("Error fetching manga list from Sankavollerei API:", error);
+    console.error("Error fetching manga list from Sankavollerei Komikindo API:", error);
     return {
       manga: [],
       pagination: {
@@ -548,16 +501,17 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
 
 export async function getGenreList(): Promise<{ name: string; slug: string }[]> {
   try {
-    const payload = await tryGet(["/api/comic/genres", "/api/comic/genre", "/comic/genres", "/comic/genre"]);
+    const payload = await getJson(`${API_PREFIX}/genres`);
     const raw = Array.isArray(payload) ? payload : isRecord(payload) ? firstArray(payload, ["data", "results", "genres", "genre"]) : [];
     return raw
       .map((genre) => {
         const name = typeof genre === "string" ? genre : isRecord(genre) ? firstString(genre, ["name", "title", "genre", "slug"]) : "";
-        return name ? { name, slug: slugify(name) } : null;
+        const slug = isRecord(genre) ? firstString(genre, ["slug", "id", "endpoint"]) || slugify(name) : slugify(name);
+        return name ? { name, slug } : null;
       })
-      .filter((genre): genre is { name: string; slug: string } => Boolean(genre));
+      .filter(isPresent);
   } catch (error) {
-    console.error("Error fetching genre list from Sankavollerei API:", error);
+    console.error("Error fetching genre list from Sankavollerei Komikindo API:", error);
     return [];
   }
 }
