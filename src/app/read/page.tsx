@@ -105,6 +105,7 @@ function ReadContent() {
   const [data, setData] = useState<ChapterData | null>(null);
   const [loading, setLoading] = useState(true);
   const [imgErrors, setImgErrors] = useState<Set<number>>(new Set());
+  const [retryNonce, setRetryNonce] = useState<Record<number, number>>({});
   const [scrollProgress, setScrollProgress] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -123,6 +124,7 @@ function ReadContent() {
 
     setLoading(true);
     setImgErrors(new Set());
+    setRetryNonce({});
     fetch(`/api/read?u=${encodeURIComponent(btoa(url))}`)
       .then((res) => res.json())
       .then((d: ChapterData) => {
@@ -176,6 +178,21 @@ function ReadContent() {
   }, [showControls, showSettings]);
 
   const handleImgError = (idx: number) => setImgErrors((prev) => new Set(prev).add(idx));
+
+  const retryImage = (idx: number) => {
+    setImgErrors((prev) => {
+      const next = new Set(prev);
+      next.delete(idx);
+      return next;
+    });
+    setRetryNonce((prev) => ({ ...prev, [idx]: Date.now() }));
+  };
+
+  const imageSrc = (img: string, idx: number) => {
+    const nonce = retryNonce[idx];
+    const proxied = `/api/image?url=${encodeURIComponent(img)}`;
+    return nonce ? `${proxied}&retry=${nonce}` : proxied;
+  };
 
   const themeClass = settings.theme === "black" ? "bg-black text-white" : settings.theme === "sepia" ? "bg-[#1d1711] text-[#f4ead7]" : "reader-surface text-foreground";
   const imageWrapClass = settings.width === "compact" ? "max-w-2xl" : settings.width === "original" ? "max-w-none" : "max-w-4xl";
@@ -246,15 +263,46 @@ function ReadContent() {
 
       <div className={`${imageWrapClass} mx-auto px-0 sm:px-4 py-3 sm:py-5 ${gapClass}`}>
         {data.images.map((img, idx) => (
-          <div key={idx} className="relative select-none bg-[#08080e] sm:rounded-2xl sm:overflow-hidden border-y sm:border border-white/5 shadow-[0_16px_45px_-35px_rgba(0,0,0,0.9)]">
+          <div key={`${idx}-${retryNonce[idx] || 0}`} className="relative select-none bg-[#08080e] sm:rounded-2xl sm:overflow-hidden border-y sm:border border-white/5 shadow-[0_16px_45px_-35px_rgba(0,0,0,0.9)]">
             <div className="absolute left-3 top-3 z-10 px-2 py-1 rounded-full bg-black/45 backdrop-blur-md text-white/70 text-[10px] font-black border border-white/10">{idx + 1}</div>
             {!imgErrors.has(idx) ? (
-              <img src={`/api/image?url=${encodeURIComponent(img)}`} alt={`Page ${idx + 1}`} className={imageClass} onError={() => handleImgError(idx)} loading={idx < 2 ? "eager" : "lazy"} style={{ minHeight: idx < 2 ? "420px" : "240px", backgroundColor: "#0b0b12" }} />
+              <img src={imageSrc(img, idx)} alt={`Page ${idx + 1}`} className={imageClass} onError={() => handleImgError(idx)} loading={idx < 2 ? "eager" : "lazy"} decoding="async" fetchPriority={idx < 2 ? "high" : "auto"} style={{ minHeight: idx < 2 ? "420px" : "240px", backgroundColor: "#0b0b12" }} />
             ) : (
-              <div className="w-full h-80 bg-card-bg flex items-center justify-center border border-border"><p className="text-muted text-xs">Halaman {idx + 1} gagal dimuat</p></div>
+              <div className="w-full min-h-80 bg-card-bg flex flex-col items-center justify-center border border-border px-6 text-center">
+                <p className="text-white font-black text-sm mb-2">Halaman {idx + 1} gagal dimuat</p>
+                <p className="text-muted text-xs mb-4 max-w-sm">CDN gambar kadang lambat atau menolak request pertama. Coba muat ulang halaman ini saja.</p>
+                <button onClick={(e) => { e.stopPropagation(); retryImage(idx); }} className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-black transition-all active:scale-95">
+                  Coba Lagi
+                </button>
+              </div>
             )}
           </div>
         ))}
+
+        <div className="px-4 sm:px-0 pt-6" onClick={(e) => e.stopPropagation()}>
+          <div className="glass-card rounded-[2rem] p-6 sm:p-8 text-center border border-primary/20">
+            <div className="w-14 h-14 rounded-2xl bg-primary/15 text-primary flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <p className="text-primary text-[10px] font-black uppercase tracking-[0.2em] mb-2">Chapter selesai</p>
+            <h2 className="text-white text-xl sm:text-2xl font-black mb-2">Mau lanjut baca?</h2>
+            <p className="text-muted text-sm mb-6">Kamu sudah sampai halaman terakhir chapter ini.</p>
+            <div className="flex flex-col sm:flex-row justify-center gap-3">
+              {data.nextChapter ? (
+                <Link href={makeReadHref(data.mangaSlug, data.nextChapter)} className="px-5 py-3 rounded-2xl bg-primary hover:bg-primary-hover text-white text-sm font-black shadow-lg shadow-primary/25 transition-all active:scale-95">
+                  Lanjut Chapter Berikutnya
+                </Link>
+              ) : (
+                <span className="px-5 py-3 rounded-2xl bg-white/6 text-muted text-sm font-black border border-white/8">Belum ada chapter berikutnya</span>
+              )}
+              {data.mangaSlug && (
+                <Link href={`/manga/${data.mangaSlug}`} className="px-5 py-3 rounded-2xl bg-white/7 hover:bg-white/12 text-white text-sm font-black border border-white/10 transition-all active:scale-95">
+                  Kembali ke Detail
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-1.5 rounded-[1.35rem] glass shadow-[0_20px_70px_rgba(0,0,0,0.65)] transition-all duration-250 ${showControls ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-7 pointer-events-none"}`} onClick={(e) => e.stopPropagation()}>

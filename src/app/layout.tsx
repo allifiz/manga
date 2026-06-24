@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
@@ -13,9 +13,42 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteTitle = "MangaReader - Baca Manga, Manhwa, dan Manhua Online";
+const siteDescription =
+  "Baca manga, manhwa, dan manhua dari BacaKomik dengan tampilan bersih, reader nyaman, bookmark, riwayat baca, dan pencarian cepat.";
+
 export const metadata: Metadata = {
-  title: "MangaReader - Baca Manga Online",
-  description: "Baca manga, manhwa, dan manhua secara online gratis",
+  metadataBase: new URL("https://manga-reader.vercel.app"),
+  title: {
+    default: siteTitle,
+    template: "%s | MangaReader",
+  },
+  description: siteDescription,
+  applicationName: "MangaReader",
+  keywords: ["manga", "manhwa", "manhua", "bacakomik", "komik online", "reader manga"],
+  authors: [{ name: "allif izz" }],
+  creator: "allif izz",
+  openGraph: {
+    type: "website",
+    locale: "id_ID",
+    siteName: "MangaReader",
+    title: siteTitle,
+    description: siteDescription,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: siteTitle,
+    description: siteDescription,
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#050508",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({

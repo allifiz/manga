@@ -49,8 +49,6 @@ function pickContinueChapter(manga: MangaDetail, lastReadUrl: string | null) {
     if (nextByNumber) return nextByNumber;
   }
 
-  // Most chapter lists are newest-first. If the user just read chapter 20,
-  // the chronological next chapter is usually one position before it.
   return manga.chapters[currentIndex - 1] ?? manga.chapters[currentIndex + 1] ?? current;
 }
 
@@ -58,6 +56,19 @@ function isUsefulValue(value: string | undefined | null): boolean {
   if (!value) return false;
   const clean = value.trim().toLowerCase();
   return Boolean(clean) && !["n/a", "na", "-", "unknown", "undefined", "null"].includes(clean);
+}
+
+function sortChapters(chapters: MangaDetail["chapters"], sort: "newest" | "oldest") {
+  return [...chapters].sort((a, b) => {
+    const aNumber = chapterNumber(a.number) ?? chapterNumber(a.url);
+    const bNumber = chapterNumber(b.number) ?? chapterNumber(b.url);
+
+    if (aNumber !== null && bNumber !== null) {
+      return sort === "newest" ? bNumber - aNumber : aNumber - bNumber;
+    }
+
+    return sort === "newest" ? b.url.localeCompare(a.url) : a.url.localeCompare(b.url);
+  });
 }
 
 export default function MangaDetailPage() {
@@ -70,6 +81,8 @@ export default function MangaDetailPage() {
   const [bookmarked, setBookmarked] = useState(false);
   const [readSet, setReadSet] = useState<Set<string>>(new Set());
   const [lastReadUrl, setLastReadUrl] = useState<string | null>(null);
+  const [chapterQuery, setChapterQuery] = useState("");
+  const [chapterSort, setChapterSort] = useState<"newest" | "oldest">("newest");
 
   useEffect(() => {
     if (slug) {
@@ -155,6 +168,13 @@ export default function MangaDetailPage() {
 
   const continueChapter = manga ? pickContinueChapter(manga, lastReadUrl) : null;
   const hasStartedReading = Boolean(lastReadUrl) || (manga ? manga.chapters.some((ch) => readSet.has(ch.url)) : false);
+  const normalizedChapterQuery = chapterQuery.trim().toLowerCase();
+  const visibleChapters = manga
+    ? sortChapters(manga.chapters, chapterSort).filter((chapter) => {
+        if (!normalizedChapterQuery) return true;
+        return `${chapter.number} ${chapter.url}`.toLowerCase().includes(normalizedChapterQuery);
+      })
+    : [];
 
   if (loading) {
     return (
@@ -257,7 +277,7 @@ export default function MangaDetailPage() {
                   clipRule="evenodd"
                 />
               </svg>
-              {hasStartedReading ? "Lanjut Baca" : "Mulai Membaca"}
+              {hasStartedReading ? `Lanjut Baca ${continueChapter.number}` : "Mulai Membaca"}
             </Link>
           )}
           <div className="flex gap-3">
@@ -272,12 +292,12 @@ export default function MangaDetailPage() {
               </svg>
               {bookmarked ? "Bookmarked" : "Bookmark"}
             </button>
-            <button className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-[0.98]">
+            <Link href="/history" className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-[0.98]">
               <svg className="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Readlist
-            </button>
+              Riwayat
+            </Link>
           </div>
         </div>
 
@@ -354,47 +374,101 @@ export default function MangaDetailPage() {
         {activeTab === "chapters" && (
           <div className="relative z-10">
             {manga.chapters.length > 0 ? (
-              <div className="space-y-1 bg-white/[0.01] border border-white/5 rounded-2xl p-2">
-                {manga.chapters.map((ch, idx) => {
-                  const isRead = readSet.has(ch.url);
-                  return (
-                    <div key={idx} className="flex items-center gap-1">
-                      <Link
-                        href={`/read?u=${encodeURIComponent(btoa(ch.url))}`}
-                        className={`flex-1 flex items-center justify-between py-3 px-3 rounded-xl transition-all duration-150 group active:scale-[0.99] border border-transparent hover:border-white/5 ${
-                          isRead ? "opacity-50 hover:bg-white/3" : "hover:bg-white/5"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          {ch.isNew && !isRead && <span className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow">UP</span>}
-                          {isRead && (
-                            <svg className="w-3 h-3 text-primary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                              <path
-                                fillRule="evenodd"
-                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                          )}
-                          <span className={`text-xs font-bold transition-colors duration-150 ${isRead ? "text-muted/50" : "text-muted group-hover:text-primary"}`}>{ch.number}</span>
-                        </div>
-                        <span className="text-muted/50 text-[10px] font-medium">{ch.time}</span>
-                      </Link>
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-3 space-y-3">
+                  <div className="relative">
+                    <input
+                      value={chapterQuery}
+                      onChange={(event) => setChapterQuery(event.target.value)}
+                      placeholder="Cari chapter, contoh: 120"
+                      className="w-full rounded-xl bg-black/20 border border-white/10 px-4 py-3 pr-10 text-sm text-white placeholder:text-muted/60 outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
+                    />
+                    {chapterQuery && (
                       <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          toggleChapterRead(ch.url);
-                        }}
-                        className={`p-2 rounded-lg transition-all active:scale-90 ${isRead ? "text-primary hover:text-muted/50" : "text-muted/30 hover:text-primary"}`}
-                        title={isRead ? "Tandai belum dibaca" : "Tandai sudah dibaca"}
+                        onClick={() => setChapterQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-white"
+                        aria-label="Bersihkan pencarian chapter"
                       >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-muted text-[11px] font-bold">
+                      Menampilkan <span className="text-white">{visibleChapters.length}</span> dari {manga.chapters.length} chapter
+                    </p>
+                    <div className="flex rounded-xl bg-white/5 border border-white/5 p-1">
+                      <button
+                        onClick={() => setChapterSort("newest")}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tighter transition-all ${chapterSort === "newest" ? "bg-primary text-white" : "text-muted hover:text-white"}`}
+                      >
+                        Terbaru
+                      </button>
+                      <button
+                        onClick={() => setChapterSort("oldest")}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tighter transition-all ${chapterSort === "oldest" ? "bg-primary text-white" : "text-muted hover:text-white"}`}
+                      >
+                        Awal
                       </button>
                     </div>
-                  );
-                })}
+                  </div>
+                </div>
+
+                <div className="space-y-1 bg-white/[0.01] border border-white/5 rounded-2xl p-2">
+                  {visibleChapters.length > 0 ? (
+                    visibleChapters.map((ch, idx) => {
+                      const isRead = readSet.has(ch.url);
+                      const isLastRead = lastReadUrl === ch.url;
+                      return (
+                        <div key={`${ch.url}-${idx}`} className="flex items-center gap-1">
+                          <Link
+                            href={`/read?u=${encodeURIComponent(btoa(ch.url))}`}
+                            className={`flex-1 flex items-center justify-between py-3 px-3 rounded-xl transition-all duration-150 group active:scale-[0.99] border ${
+                              isLastRead
+                                ? "border-primary/30 bg-primary/10"
+                                : isRead
+                                  ? "border-transparent opacity-55 hover:bg-white/3"
+                                  : "border-transparent hover:border-white/5 hover:bg-white/5"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {ch.isNew && !isRead && <span className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow">UP</span>}
+                              {isRead && (
+                                <svg className="w-3 h-3 text-primary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              )}
+                              <span className={`text-xs font-bold transition-colors duration-150 truncate ${isLastRead ? "text-white" : isRead ? "text-muted/50" : "text-muted group-hover:text-primary"}`}>{ch.number}</span>
+                              {isLastRead && <span className="text-[8px] font-black uppercase tracking-wider text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5">Terakhir</span>}
+                            </div>
+                            <span className="text-muted/50 text-[10px] font-medium shrink-0 ml-3">{ch.time}</span>
+                          </Link>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              toggleChapterRead(ch.url);
+                            }}
+                            className={`p-2 rounded-lg transition-all active:scale-90 ${isRead ? "text-primary hover:text-muted/50" : "text-muted/30 hover:text-primary"}`}
+                            title={isRead ? "Tandai belum dibaca" : "Tandai sudah dibaca"}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="py-10 text-center">
+                      <p className="text-white font-bold text-sm">Chapter tidak ketemu</p>
+                      <p className="text-muted text-xs mt-1">Coba kata kunci lain atau kosongkan pencarian.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <p className="text-muted text-xs py-8 text-center bg-card-bg/40 rounded-2xl border border-border">Tidak ada chapter tersedia</p>

@@ -45,6 +45,19 @@ function typeLabel(value?: string) {
   return value.toUpperCase();
 }
 
+function typeBadgeClass(value?: string) {
+  const clean = (value || "").toLowerCase();
+  if (clean.includes("manhwa")) return "bg-sky-400/12 border-sky-300/20 text-sky-200";
+  if (clean.includes("manhua")) return "bg-emerald-400/12 border-emerald-300/20 text-emerald-200";
+  if (clean.includes("manga")) return "bg-fuchsia-400/12 border-fuchsia-300/20 text-fuchsia-200";
+  return "bg-primary/10 border-primary/15 text-primary";
+}
+
+function formatChapterBadge(chapter?: { number: string; time: string; url: string }) {
+  if (!chapter?.number) return null;
+  return chapter.time ? `${chapter.number} • ${chapter.time}` : chapter.number;
+}
+
 export default function MangaCard({
   id,
   title,
@@ -56,6 +69,7 @@ export default function MangaCard({
   variant = "horizontal",
 }: MangaCardProps) {
   const [imgError, setImgError] = useState(false);
+  const latestChapter = chapters[0];
 
   if (variant === "featured") {
     return (
@@ -71,6 +85,7 @@ export default function MangaCard({
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
               onError={() => setImgError(true)}
               loading="lazy"
+              decoding="async"
             />
           ) : (
             <CoverFallback />
@@ -80,7 +95,7 @@ export default function MangaCard({
 
           <div className="absolute top-4 left-4 flex items-center gap-2">
             {type && (
-              <span className="px-3 py-1.5 bg-primary text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-[0_8px_20px_rgba(168,85,247,0.35)]">
+              <span className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-full shadow-lg border ${typeBadgeClass(type)}`}>
                 {typeLabel(type)}
               </span>
             )}
@@ -102,8 +117,8 @@ export default function MangaCard({
             <h3 className="text-white font-black text-xl md:text-3xl line-clamp-2 mb-3 group-hover:text-primary transition-colors duration-300 leading-tight">
               {title}
             </h3>
-            <div className="flex items-center gap-2 text-xs text-muted font-bold">
-              {chapters.length > 0 && <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10">{chapters[0].number}</span>}
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted font-bold">
+              {latestChapter && <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10">{formatChapterBadge(latestChapter)}</span>}
               <span className="px-3 py-1 rounded-full bg-white/5 border border-white/5">Buka detail</span>
             </div>
           </div>
@@ -123,6 +138,7 @@ export default function MangaCard({
               className="w-full h-full object-cover group-hover:scale-107 transition-transform duration-500 ease-out"
               onError={() => setImgError(true)}
               loading="lazy"
+              decoding="async"
             />
           ) : (
             <CoverFallback compact />
@@ -141,13 +157,13 @@ export default function MangaCard({
 
           <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-2">
             {type && (
-              <span className="text-white/85 text-[9px] font-black uppercase tracking-tight px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10">
+              <span className={`text-[9px] font-black uppercase tracking-tight px-2 py-1 rounded-full backdrop-blur-md border ${typeBadgeClass(type)}`}>
                 {typeLabel(type)}
               </span>
             )}
-            {chapters[0]?.number && (
+            {latestChapter?.number && (
               <span className="text-white/85 text-[9px] font-black px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 truncate">
-                {chapters[0].number}
+                {latestChapter.number}
               </span>
             )}
           </div>
@@ -171,6 +187,7 @@ export default function MangaCard({
                 className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out"
                 onError={() => setImgError(true)}
                 loading="lazy"
+                decoding="async"
               />
             ) : (
               <CoverFallback compact />
@@ -196,11 +213,15 @@ export default function MangaCard({
 
           <div className="flex flex-wrap items-center gap-2 mb-3">
             {type && (
-              <span className="text-[10px] text-primary font-black uppercase tracking-wide px-2 py-0.5 bg-primary/10 border border-primary/15 rounded-full">
+              <span className={`text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded-full border ${typeBadgeClass(type)}`}>
                 {typeLabel(type)}
               </span>
             )}
-            <span className="text-[10px] text-muted/70 font-bold">Update terbaru</span>
+            {latestChapter?.time ? (
+              <span className="text-[10px] text-muted/70 font-bold">Update {latestChapter.time}</span>
+            ) : (
+              <span className="text-[10px] text-muted/70 font-bold">Update terbaru</span>
+            )}
           </div>
 
           {chapters.length > 0 ? (
