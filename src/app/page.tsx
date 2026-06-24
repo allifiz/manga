@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import MangaCard from "@/components/MangaCard";
+import ContinueReadingSection from "@/components/ContinueReadingSection";
 
 interface MangaItem {
   id: string;
@@ -119,6 +120,8 @@ export default function Home() {
               </section>
             )}
 
+            <ContinueReadingSection />
+
             {safeData.recommendations.length > 0 && (
               <section className="py-6">
                 <div className="px-5 flex items-center justify-between mb-5">
@@ -129,10 +132,7 @@ export default function Home() {
                 </div>
                 <div className="flex gap-4 overflow-x-auto hide-scrollbar px-5 pb-2">
                   {safeData.recommendations.map((manga) => (
-                    <div
-                      key={manga.id}
-                      className="w-32 flex-shrink-0"
-                    >
+                    <div key={manga.id} className="w-32 flex-shrink-0">
                       <MangaCard {...manga} variant="vertical" />
                     </div>
                   ))}
