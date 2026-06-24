@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import MangaCard from "@/components/MangaCard";
 
@@ -18,6 +18,34 @@ interface Genre {
 }
 
 export default function ExplorePage() {
+  return (
+    <Suspense fallback={<ExploreLoading />}> 
+      <ExploreContent />
+    </Suspense>
+  );
+}
+
+function ExploreLoading() {
+  return (
+    <main className="flex-1 max-w-4xl mx-auto w-full pb-32 px-4">
+      <div className="py-6">
+        <div className="flex items-center justify-between mb-8 px-1">
+          <h1 className="text-white font-black text-3xl tracking-tight">Explore</h1>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6">
+          {Array.from({ length: 18 }).map((_, i) => (
+            <div key={i} className="space-y-3">
+              <div className="skeleton aspect-[3/4.5] w-full shadow-2xl" />
+              <div className="skeleton h-3.5 w-full rounded-lg" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function ExploreContent() {
   const searchParams = useSearchParams();
   const [manga, setManga] = useState<MangaItem[]>([]);
   const [genres, setGenres] = useState<Genre[]>([]);
