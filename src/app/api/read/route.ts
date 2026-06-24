@@ -9,7 +9,7 @@ const API_BASE_URL = (
   "https://www.sankavollerei.web.id"
 ).replace(/\/+$/, "");
 
-const API_PREFIX = "/comic/komikindo";
+const API_PREFIX = "/comic/bacakomik";
 
 type ApiRecord = Record<string, unknown>;
 
@@ -75,7 +75,7 @@ function parseChapterCandidates(input: string): string[] {
 function isProbablyImageUrl(value: string): boolean {
   if (!/^https?:\/\//i.test(value)) return false;
   if (/\.(jpg|jpeg|png|webp|gif)(\?|#|$)/i.test(value)) return true;
-  return /(blogspot|bp\.blogspot|googleusercontent|wp-content|uploads|cdn|img|image|manga|komik|chapter)/i.test(value);
+  return /(blogspot|bp\.blogspot|googleusercontent|wp-content|uploads|cdn|img|image|manga|komik|chapter|himmga|gaimgame|imageainewgeneration)/i.test(value);
 }
 
 function collectImageUrls(value: unknown, depth = 0): string[] {
@@ -118,23 +118,17 @@ function uniqueStrings(items: string[]): string[] {
   return Array.from(new Set(items.filter(Boolean)));
 }
 
-function unwrapPayload(payload: unknown): unknown {
-  if (!isRecord(payload)) return payload;
-  if (isRecord(payload.data)) return payload.data;
-  if (isRecord(payload.result)) return payload.result;
-  if (isRecord(payload.chapter)) return payload.chapter;
-  return payload;
-}
-
 async function getDirectChapterFallback(url: string): Promise<ChapterPage | null> {
   const candidates = parseChapterCandidates(url);
 
   for (const chapterSlug of candidates) {
     try {
-      const response = await fetch(`${API_BASE_URL}${API_PREFIX}/chapter/${encodeURIComponent(chapterSlug)}`, {
+      const response = await fetch(`${API_BASE_URL}${API_PREFIX}/chapter/${encodeURIComponent(chapterSlug)}?_=${Date.now()}`, {
         cache: "no-store",
         headers: {
           Accept: "application/json",
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         },
@@ -142,22 +136,24 @@ async function getDirectChapterFallback(url: string): Promise<ChapterPage | null
 
       if (!response.ok) continue;
       const payload = await response.json();
-      const data = unwrapPayload(payload);
-      const rawImages = uniqueStrings(collectImageUrls(data));
+      const rawImages = uniqueStrings(collectImageUrls(payload));
       const images = rawImages.map(proxyImageUrl);
       if (!images.length) continue;
 
-      const title = isRecord(data) ? firstString(data, ["title", "comicTitle", "mangaTitle", "name"]) : "";
-      const chapter = isRecord(data) ? firstString(data, ["chapter", "chapterTitle", "title", "name"]) : "";
+      const navigation = isRecord(payload.navigation) ? payload.navigation : {};
+      const title = isRecord(payload) ? firstString(payload, ["title", "comicTitle", "mangaTitle", "name"]) : "";
+      const chapter = isRecord(payload) ? firstString(payload, ["chapter", "chapterTitle", "title", "name"]) : "";
 
       return {
         title: title || slugToTitle(chapterSlug.replace(/-chapter-.+$/i, "")),
         chapter: chapter || slugToTitle(chapterSlug),
         images,
+        prevChapter: firstString(navigation, ["prev"]) || undefined,
+        nextChapter: firstString(navigation, ["next"]) || undefined,
         mangaSlug: chapterSlug.replace(/-chapter-.+$/i, ""),
       };
     } catch (error) {
-      console.error("Direct chapter fallback failed:", error);
+      console.error("Direct BacaKomik chapter fallback failed:", error);
     }
   }
 
@@ -191,7 +187,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Failed to load chapter" }, { status: 404 });
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      },
+    });
   } catch (error) {
     console.error("API Error:", error);
     return NextResponse.json({ error: "Failed to fetch chapter pages" }, { status: 500 });
