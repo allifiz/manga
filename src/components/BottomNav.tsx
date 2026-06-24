@@ -9,6 +9,7 @@ export default function BottomNav() {
   const navItems = [
     { href: "/", label: "Beranda", icon: HomeIcon },
     { href: "/explore", label: "Explore", icon: ExploreIcon },
+    { href: "/history", label: "Riwayat", icon: HistoryIcon },
     { href: "/library", label: "Library", icon: LibraryIcon },
     { href: "/search", label: "Cari", icon: SearchIcon },
   ];
@@ -16,8 +17,8 @@ export default function BottomNav() {
   if (pathname?.startsWith("/read") || pathname?.startsWith("/manga")) return null;
 
   return (
-    <div className="fixed bottom-5 left-0 right-0 z-40 px-4 pointer-events-none">
-      <nav className="max-w-md mx-auto glass rounded-[1.75rem] shadow-[0_22px_70px_rgba(0,0,0,0.55)] border border-white/10 p-1.5 pointer-events-auto">
+    <div className="fixed bottom-5 left-0 right-0 z-40 px-3 pointer-events-none">
+      <nav className="max-w-lg mx-auto glass rounded-[1.75rem] shadow-[0_22px_70px_rgba(0,0,0,0.55)] border border-white/10 p-1.5 pointer-events-auto">
         <div className="flex justify-around items-center h-15">
           {navItems.map((item) => {
             const isActive = item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
@@ -33,7 +34,7 @@ export default function BottomNav() {
                   <div className="absolute inset-0 bg-gradient-to-b from-primary/22 to-primary/8 rounded-2xl animate-fade-in border border-primary/15" />
                 )}
                 <item.icon className={`relative w-5.5 h-5.5 transition-all duration-300 ${isActive ? "scale-110 drop-shadow-[0_0_10px_rgba(168,85,247,0.65)]" : "opacity-70 group-hover:opacity-100 group-hover:scale-105"}`} />
-                <span className={`relative text-[9px] tracking-tight font-black uppercase ${isActive ? "text-primary" : ""}`}>{item.label}</span>
+                <span className={`relative text-[8px] sm:text-[9px] tracking-tight font-black uppercase ${isActive ? "text-primary" : ""}`}>{item.label}</span>
               </Link>
             );
           })}
@@ -55,6 +56,14 @@ function ExploreIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+    </svg>
+  );
+}
+
+function HistoryIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a10 10 0 1 1-3.2-7.32M22 4v5h-5" />
     </svg>
   );
 }
