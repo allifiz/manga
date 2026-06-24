@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import MangaCard from "@/components/MangaCard";
 
 interface MangaItem {
@@ -17,6 +18,7 @@ interface Genre {
 }
 
 export default function ExplorePage() {
+  const searchParams = useSearchParams();
   const [manga, setManga] = useState<MangaItem[]>([]);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,10 +26,10 @@ export default function ExplorePage() {
   const [totalPages, setTotalPages] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
 
-  const [activeGenre, setActiveGenre] = useState("");
-  const [activeType, setActiveType] = useState("");
-  const [activeStatus, setActiveStatus] = useState("");
-  const [activeOrder, setActiveOrder] = useState("");
+  const [activeGenre, setActiveGenre] = useState(() => searchParams.get("genre") || "");
+  const [activeType, setActiveType] = useState(() => searchParams.get("tipe") || searchParams.get("type") || "");
+  const [activeStatus, setActiveStatus] = useState(() => searchParams.get("status") || "");
+  const [activeOrder, setActiveOrder] = useState(() => searchParams.get("orderby") || "");
 
   const fetchManga = useCallback(() => {
     setLoading(true);
@@ -105,9 +107,8 @@ export default function ExplorePage() {
   const orders = [
     { label: "Default", value: "" },
     { label: "Terbaru", value: "date" },
-    { label: "Update", value: "modified" },
-    { label: "Populer", value: "meta_value_num" },
-    { label: "Acak", value: "rand" },
+    { label: "Populer", value: "popular" },
+    { label: "Top", value: "top" },
   ];
 
   return (
@@ -132,9 +133,7 @@ export default function ExplorePage() {
                     setPage(1);
                   }}
                   className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
-                    activeType === t.value
-                      ? "bg-primary text-white shadow-lg shadow-primary/20"
-                      : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                    activeType === t.value ? "bg-primary text-white shadow-lg shadow-primary/20" : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
                   }`}
                 >
                   {t.label}
@@ -154,9 +153,7 @@ export default function ExplorePage() {
                     setPage(1);
                   }}
                   className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
-                    activeStatus === s.value
-                      ? "bg-primary text-white shadow-lg shadow-primary/20"
-                      : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                    activeStatus === s.value ? "bg-primary text-white shadow-lg shadow-primary/20" : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
                   }`}
                 >
                   {s.label}
@@ -176,9 +173,7 @@ export default function ExplorePage() {
                     setPage(1);
                   }}
                   className={`px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 ${
-                    activeOrder === o.value
-                      ? "bg-primary text-white shadow-lg shadow-primary/20"
-                      : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
+                    activeOrder === o.value ? "bg-primary text-white shadow-lg shadow-primary/20" : "bg-white/5 text-muted hover:text-white hover:bg-white/10"
                   }`}
                 >
                   {o.label}
@@ -232,12 +227,7 @@ export default function ExplorePage() {
           <>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6 animate-fade-in">
               {manga.map((item) => (
-                <MangaCard
-                  key={item.id}
-                  {...item}
-                  chapters={[]}
-                  variant="vertical"
-                />
+                <MangaCard key={item.id} {...item} chapters={[]} variant="vertical" />
               ))}
             </div>
 
@@ -271,7 +261,9 @@ export default function ExplorePage() {
             </div>
             <p className="text-white font-bold text-lg mb-2">Pustaka Kosong</p>
             <p className="text-muted text-sm mb-6">Tidak ada manga ditemukan dengan filter ini</p>
-            <button onClick={resetFilters} className="text-primary font-black text-xs uppercase tracking-widest hover:underline underline-offset-8 transition-all">Reset semua filter</button>
+            <button onClick={resetFilters} className="text-primary font-black text-xs uppercase tracking-widest hover:underline underline-offset-8 transition-all">
+              Reset semua filter
+            </button>
           </div>
         )}
       </div>
