@@ -266,7 +266,7 @@ function ReadContent() {
           <div key={`${idx}-${retryNonce[idx] || 0}`} className="relative select-none bg-[#08080e] sm:rounded-2xl sm:overflow-hidden border-y sm:border border-white/5 shadow-[0_16px_45px_-35px_rgba(0,0,0,0.9)]">
             <div className="absolute left-3 top-3 z-10 px-2 py-1 rounded-full bg-black/45 backdrop-blur-md text-white/70 text-[10px] font-black border border-white/10">{idx + 1}</div>
             {!imgErrors.has(idx) ? (
-              <img src={imageSrc(img, idx)} alt={`Page ${idx + 1}`} className={imageClass} onError={() => handleImgError(idx)} loading={idx < 2 ? "eager" : "lazy"} style={{ minHeight: idx < 2 ? "420px" : "240px", backgroundColor: "#0b0b12" }} />
+              <img src={imageSrc(img, idx)} alt={`Page ${idx + 1}`} className={imageClass} onError={() => handleImgError(idx)} loading={idx < 2 ? "eager" : "lazy"} decoding="async" fetchPriority={idx < 2 ? "high" : "auto"} style={{ minHeight: idx < 2 ? "420px" : "240px", backgroundColor: "#0b0b12" }} />
             ) : (
               <div className="w-full min-h-80 bg-card-bg flex flex-col items-center justify-center border border-border px-6 text-center">
                 <p className="text-white font-black text-sm mb-2">Halaman {idx + 1} gagal dimuat</p>
