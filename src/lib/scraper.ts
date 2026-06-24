@@ -6,7 +6,7 @@ const API_BASE_URL = (
   "https://www.sankavollerei.web.id"
 ).replace(/\/+$/, "");
 
-const API_PREFIX = "/comic/komikindo";
+const API_PREFIX = "/comic/bacakomik";
 const PAGE_SIZE = 10;
 const PLACEHOLDER_COVER = "https://via.placeholder.com/300x450/1A1A1A/666?text=No+Cover";
 
@@ -85,8 +85,6 @@ export interface MangaListResponse {
 }
 
 type ApiRecord = Record<string, unknown>;
-type QueryValue = string | number | boolean | undefined;
-type QueryParams = Record<string, QueryValue>;
 type DetailChapter = MangaDetail["chapters"][number];
 
 function createClient(baseURL: string): AxiosInstance {
@@ -95,6 +93,8 @@ function createClient(baseURL: string): AxiosInstance {
     timeout: 20000,
     headers: {
       Accept: "application/json",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     },
@@ -131,41 +131,11 @@ function slugToTitle(slug: string): string {
   return slug.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function normalizeFilterValue(value?: string | null): string | undefined {
-  if (!value) return undefined;
-  const clean = value
-    .replace(/^\/+|\/+$/g, "")
-    .replace(/^genre\//, "")
-    .toLowerCase()
-    .trim();
-
-  if (!clean || clean === "all" || clean === "semua") return undefined;
-  if (["end", "ended", "complete", "completed", "tamat"].includes(clean)) return "tamat";
-  if (["on-going", "ongoing", "berjalan"].includes(clean)) return "ongoing";
-  return clean;
-}
-
 function firstString(record: ApiRecord, keys: string[]): string {
   for (const key of keys) {
     const value = record[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number") return String(value);
-  }
-  return "";
-}
-
-function firstNestedString(record: ApiRecord, paths: string[][]): string {
-  for (const path of paths) {
-    let current: unknown = record;
-    for (const key of path) {
-      if (!isRecord(current)) {
-        current = undefined;
-        break;
-      }
-      current = current[key];
-    }
-    const value = asString(current);
-    if (value) return value;
+    const text = asString(value);
+    if (text) return text;
   }
   return "";
 }
@@ -178,17 +148,19 @@ function firstArray(record: ApiRecord, keys: string[]): unknown[] {
   return [];
 }
 
-function unwrapData(payload: unknown): unknown {
-  if (!isRecord(payload)) return payload;
-  for (const key of ["data", "result", "results", "items", "comics", "comic", "manga", "list"]) {
-    const value = payload[key];
-    if (Array.isArray(value)) return value;
-    if (isRecord(value)) {
-      const nested = unwrapData(value);
-      if (Array.isArray(nested)) return nested;
-    }
-  }
-  return payload;
+function normalizeFilterValue(value?: string | null): string | undefined {
+  if (!value) return undefined;
+  const clean = value
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/^genre\//, "")
+    .toLowerCase()
+    .trim();
+
+  if (!clean || clean === "all" || clean === "semua") return undefined;
+  if (["manga", "manhwa", "manhua"].includes(clean)) return clean;
+  if (["end", "ended", "complete", "completed", "tamat"].includes(clean)) return "completed";
+  if (["on-going", "ongoing", "berjalan"].includes(clean)) return "ongoing";
+  return clean;
 }
 
 function slugFromUrl(value: string): string {
@@ -200,40 +172,43 @@ function slugFromUrl(value: string): string {
 function itemSlug(record: ApiRecord): string {
   const direct = firstString(record, ["slug", "endpoint", "id", "comicId", "mangaId"]);
   if (direct && !direct.startsWith("http")) return slugify(direct);
-  const url = firstString(record, ["url", "link", "href", "path", "chapterUrl"]);
+  const url = firstString(record, ["url", "link", "href", "path"]);
   if (url) return slugFromUrl(url);
   return slugify(firstString(record, ["title", "name", "judul", "comicTitle", "mangaTitle"]));
+}
+
+function extractChapterSlug(value: string, mangaSlug: string): string {
+  const clean = value.trim();
+  if (!clean) return "";
+  if (/^https?:\/\//i.test(clean) || clean.includes("/")) return slugFromUrl(clean);
+  const slug = slugify(clean);
+  if (slug.includes("chapter")) return slug;
+
+  const numberMatch = clean.match(/(?:ch\.?|chapter)?\s*([0-9]+(?:\.[0-9]+)?)/i);
+  if (numberMatch?.[1]) return `${mangaSlug}-chapter-${numberMatch[1].replace(/\./g, "-")}`;
+  return slug;
 }
 
 function chapterUrl(mangaSlug: string, chapterSlug: string): string {
   return `/komik/${mangaSlug}/${chapterSlug}`;
 }
 
-function collectComicRecords(value: unknown, depth = 0): ApiRecord[] {
-  if (depth > 8) return [];
-  if (Array.isArray(value)) return value.flatMap((item) => collectComicRecords(item, depth + 1));
-  if (!isRecord(value)) return [];
-
-  const nested = firstArray(value, ["data", "result", "results", "items", "comics", "comic", "manga", "list"]);
-  if (nested.length) return collectComicRecords(nested, depth + 1);
-
-  const title = firstString(value, ["title", "name", "judul", "comicTitle", "mangaTitle"]);
-  if (title || itemSlug(value)) return [value];
-
-  return Object.values(value).flatMap((child) => collectComicRecords(child, depth + 1));
+function unwrapPayload(payload: unknown): unknown {
+  if (!isRecord(payload)) return payload;
+  if (Array.isArray(payload.komikList)) return payload.komikList;
+  if (Array.isArray(payload.images)) return payload.images;
+  if (isRecord(payload.data)) return payload.data;
+  if (isRecord(payload.result)) return payload.result;
+  return payload;
 }
 
-function collectImageUrls(value: unknown, depth = 0): string[] {
-  if (depth > 8) return [];
-  if (Array.isArray(value)) return value.flatMap((item) => collectImageUrls(item, depth + 1));
-  if (typeof value === "string") {
-    return /^https?:\/\//i.test(value) && /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(value) ? [value] : [];
-  }
-  if (!isRecord(value)) return [];
-
-  const direct = firstString(value, ["url", "image", "imageUrl", "src", "link"]);
-  const directImages = direct ? collectImageUrls(direct, depth + 1) : [];
-  return [...directImages, ...Object.values(value).flatMap((child) => collectImageUrls(child, depth + 1))];
+function getList(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (!isRecord(payload)) return [];
+  const direct = firstArray(payload, ["komikList", "mangaList", "comicList", "results", "items", "data", "list"]);
+  if (direct.length) return direct;
+  const unwrapped = unwrapPayload(payload);
+  return Array.isArray(unwrapped) ? unwrapped : [];
 }
 
 function uniqueById<T extends { id: string; title?: string }>(items: T[]): T[] {
@@ -258,13 +233,21 @@ function normalizeGenres(value: unknown): string[] {
 }
 
 function normalizeChapters(value: unknown, mangaSlug: string): { number: string; time: string; url: string }[] {
-  const raw = Array.isArray(value) ? value : value ? [value] : [];
+  const raw = Array.isArray(value) ? value : isRecord(value) ? getList(value) : [];
+
   return raw
     .map((chapter) => {
-      if (!isRecord(chapter)) return null;
+      if (!isRecord(chapter)) {
+        const text = asString(chapter);
+        const slug = extractChapterSlug(text, mangaSlug);
+        return slug ? { number: text || slugToTitle(slug), time: "", url: chapterUrl(mangaSlug, slug) } : null;
+      }
+
       const title = firstString(chapter, ["title", "name", "chapter", "chapterTitle", "number"]);
-      const slug = itemSlug(chapter) || slugify(title);
+      const slugSource = firstString(chapter, ["slug", "endpoint", "url", "link", "href", "id"]) || title;
+      const slug = extractChapterSlug(slugSource, mangaSlug);
       if (!title && !slug) return null;
+
       return {
         number: title || slugToTitle(slug),
         time: firstString(chapter, ["time", "date", "updatedAt", "createdAt", "releaseDate"]),
@@ -275,70 +258,54 @@ function normalizeChapters(value: unknown, mangaSlug: string): { number: string;
 }
 
 function mangaItemFromRecord(record: ApiRecord): MangaItem | null {
-  const data = isRecord(record.data) ? record.data : record;
-  const slug = itemSlug(data) || itemSlug(record);
-  const title = firstString(data, ["title", "name", "judul", "comicTitle", "mangaTitle"]) || slugToTitle(slug);
+  const slug = itemSlug(record);
+  const title = firstString(record, ["title", "name", "judul", "comicTitle", "mangaTitle"]) || slugToTitle(slug);
   if (!slug || !title) return null;
 
-  const cover =
-    firstNestedString(data, [["cover"], ["thumbnail"], ["image"], ["imageUrl"], ["poster"], ["coverImage"], ["thumb"], ["img"]]) ||
-    firstNestedString(record, [["cover"], ["thumbnail"], ["image"], ["imageUrl"], ["poster"], ["coverImage"], ["thumb"], ["img"]]) ||
-    PLACEHOLDER_COVER;
-
-  const chapters = normalizeChapters(data.chapters || data.chapter || data.latestChapter || record.chapters || record.chapter, slug).slice(0, 3);
+  const cover = firstString(record, ["cover", "thumbnail", "image", "imageUrl", "poster", "coverImage", "thumb", "img"]) || PLACEHOLDER_COVER;
+  const latestChapter = firstString(record, ["chapter", "latestChapter", "latest_chapter", "lastChapter"]);
+  const chapterSlug = latestChapter ? extractChapterSlug(latestChapter, slug) : "";
+  const chapters = chapterSlug
+    ? [{ number: latestChapter, time: firstString(record, ["date", "time", "updatedAt"]), url: chapterUrl(slug, chapterSlug) }]
+    : normalizeChapters(record.chapters || record.chapterList || record.episodes, slug).slice(0, 3);
 
   return {
     id: slug,
     title,
     cover,
     chapters,
-    rating: firstString(data, ["rating", "score"]),
-    isNew: chapters.length > 0,
-    type: firstString(data, ["type", "format", "tipe"]),
-    status: firstString(data, ["status"]),
-    genres: normalizeGenres(data.genres || data.genre || record.genres),
+    rating: firstString(record, ["rating", "score"]),
+    isNew: Boolean(latestChapter || chapters.length),
+    type: firstString(record, ["type", "format", "tipe"]),
+    status: firstString(record, ["status"]),
+    genres: normalizeGenres(record.genres || record.genre),
   };
 }
 
 function mapItems(payload: unknown, limit = PAGE_SIZE): MangaItem[] {
   return uniqueById(
-    collectComicRecords(unwrapData(payload))
-      .map(mangaItemFromRecord)
+    getList(payload)
+      .map((item) => (isRecord(item) ? mangaItemFromRecord(item) : null))
       .filter(isPresent),
   ).slice(0, limit);
 }
 
-function getTotalPages(payload: unknown, currentPage: number, itemCount: number): number {
-  if (!isRecord(payload)) return itemCount >= PAGE_SIZE ? currentPage + 1 : currentPage;
-  const candidates = [payload.totalPages, payload.lastPage, payload.total_page, payload.totalPage, payload.pages];
-  if (isRecord(payload.pagination)) candidates.push(payload.pagination.totalPages, payload.pagination.lastPage, payload.pagination.total_page);
-  if (isRecord(payload.meta)) candidates.push(payload.meta.totalPages, payload.meta.lastPage, payload.meta.total_page);
-  const total = candidates.map(Number).find((value) => Number.isFinite(value) && value > 0);
-  return total || (itemCount >= PAGE_SIZE ? currentPage + 1 : currentPage);
+function paginateItems<T>(items: T[], page: number, pageSize = PAGE_SIZE): T[] {
+  const start = Math.max(0, page - 1) * pageSize;
+  return items.slice(start, start + pageSize);
 }
 
-async function getJson(path: string, params?: QueryParams): Promise<unknown | null> {
+async function getJson(path: string): Promise<unknown | null> {
   try {
-    const { data, status, headers } = await api.get(path, { params });
+    const { data, status, headers } = await api.get(path, {
+      params: { _: Date.now() },
+    });
     const contentType = String(headers["content-type"] || "");
     if (status >= 200 && status < 300 && (contentType.includes("json") || typeof data === "object")) return data;
   } catch (error) {
-    console.error(`Sankavollerei Komikindo API failed: ${path}`, error);
+    console.error(`BacaKomik API failed: ${path}`, error);
   }
   return null;
-}
-
-function buildLibraryParams(filters: MangaListFilters, page: number): QueryParams {
-  const params: QueryParams = { page, limit: PAGE_SIZE };
-  const type = normalizeFilterValue(filters.tipe);
-  const status = normalizeFilterValue(filters.status);
-  const genre = normalizeFilterValue(filters.genre || filters.genre2);
-  const search = filters.s?.trim();
-  if (type) params.type = type;
-  if (status) params.status = status;
-  if (genre) params.genre = genre;
-  if (search) params.search = search;
-  return params;
 }
 
 function fallbackHome(): HomePageData {
@@ -347,47 +314,45 @@ function fallbackHome(): HomePageData {
 
 export async function getHomePage(): Promise<HomePageData> {
   try {
-    const [latestPage1, latestPage2, library] = await Promise.all([
-      getJson(`${API_PREFIX}/latest/1`),
-      getJson(`${API_PREFIX}/latest/2`),
-      getJson(`${API_PREFIX}/library`, { page: 1, limit: 20 }),
+    const [latest, popular, recommended, top] = await Promise.all([
+      getJson(`${API_PREFIX}/latest`),
+      getJson(`${API_PREFIX}/populer`),
+      getJson(`${API_PREFIX}/recomen`),
+      getJson(`${API_PREFIX}/top`),
     ]);
 
-    const latestItems = uniqueById([...mapItems(latestPage1, 20), ...mapItems(latestPage2, 20), ...mapItems(library, 20)]);
+    const latestItems = mapItems(latest, 24);
+    const popularItems = mapItems(popular, 24);
+    const recommendedItems = mapItems(recommended, 24);
+    const topItems = mapItems(top, 24);
 
     return {
-      featured: latestItems.slice(0, 5),
-      recommendations: latestItems.slice(5, 11),
+      featured: uniqueById([...popularItems, ...topItems, ...latestItems]).slice(0, 5),
+      recommendations: uniqueById([...recommendedItems, ...topItems, ...popularItems]).slice(0, 10),
       updates: latestItems.slice(0, 10),
-      popular: latestItems.slice(0, 12),
+      popular: uniqueById([...popularItems, ...topItems]).slice(0, 12),
     };
   } catch (error) {
-    console.error("Error fetching homepage from Sankavollerei Komikindo API:", error);
+    console.error("Error fetching homepage from BacaKomik API:", error);
     return fallbackHome();
   }
 }
 
 function detailChapters(payload: unknown, mangaSlug: string): MangaDetail["chapters"] {
-  const chapters = normalizeChapters(
-    isRecord(payload) ? payload.chapters || payload.chapterList || payload.episodes || payload.data : payload,
-    mangaSlug,
-  );
-
-  return chapters.map<DetailChapter>((chapter, index) => ({ ...chapter, isNew: index < 3 }));
+  const source = isRecord(payload)
+    ? payload.chapters || payload.chapterList || payload.episodes || payload.chapter || payload.komikList || payload.data
+    : payload;
+  return normalizeChapters(source, mangaSlug).map<DetailChapter>((chapter, index) => ({ ...chapter, isNew: index < 3 }));
 }
 
 function detailFromPayload(payload: unknown, slug: string): MangaDetail | null {
-  const records = collectComicRecords(payload);
-  const record = records[0] || (isRecord(unwrapData(payload)) ? unwrapData(payload) : null);
-  if (!record) return null;
-
-  const data = isRecord(record.data) ? record.data : record;
+  if (!payload || !isRecord(payload)) return null;
+  const data = isRecord(payload.data) ? payload.data : isRecord(payload.detail) ? payload.detail : payload;
   const id = itemSlug(data) || slug;
   const title = firstString(data, ["title", "name", "judul", "comicTitle", "mangaTitle"]) || slugToTitle(slug);
-  const cover =
-    firstNestedString(data, [["cover"], ["thumbnail"], ["image"], ["imageUrl"], ["poster"], ["coverImage"], ["thumb"], ["img"]]) || PLACEHOLDER_COVER;
+  const cover = firstString(data, ["cover", "thumbnail", "image", "imageUrl", "poster", "coverImage", "thumb", "img"]) || PLACEHOLDER_COVER;
   const genreNames = normalizeGenres(data.genres || data.genre).map((name) => ({ name, slug: slugify(name) }));
-  const chapters = detailChapters(data.chapters || data.chapterList || data.episodes || unwrapData(payload), id);
+  const chapters = detailChapters(data, id);
 
   return {
     id,
@@ -397,7 +362,7 @@ function detailFromPayload(payload: unknown, slug: string): MangaDetail | null {
     rating: firstString(data, ["rating", "score"]),
     views: firstString(data, ["views", "view"]),
     chapters_count: String(chapters.length || firstString(data, ["chapters_count", "totalChapters"])),
-    synopsis: firstString(data, ["synopsis", "description", "summary"]),
+    synopsis: firstString(data, ["synopsis", "description", "summary", "sinopsis"]),
     genres: genreNames,
     author: firstString(data, ["author"]),
     artist: firstString(data, ["artist"]),
@@ -430,21 +395,22 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
 
   try {
     const payload = await getJson(`${API_PREFIX}/chapter/${chapterSlug}`);
-    if (!payload) return null;
+    if (!payload || !isRecord(payload)) return null;
 
-    const data = unwrapData(payload);
-    const images = uniqueById(collectImageUrls(data).map((image) => ({ id: image }))).map((item) => item.id);
-    const title = isRecord(data) ? firstString(data, ["title", "comicTitle", "mangaTitle", "name"]) : "";
-    const chapter = isRecord(data) ? firstString(data, ["chapter", "chapterTitle", "title", "name"]) : "";
+    const rawImages = Array.isArray(payload.images) ? payload.images : Array.isArray(payload.data) ? payload.data : [];
+    const images = rawImages.map(asString).filter((image) => /^https?:\/\//i.test(image));
+    const navigation = isRecord(payload.navigation) ? payload.navigation : {};
 
     return {
-      title: title || slugToTitle(chapterSlug.replace(/-chapter-.+$/i, "")),
-      chapter: chapter || slugToTitle(chapterSlug),
+      title: firstString(payload, ["title", "comicTitle", "mangaTitle", "name"]) || slugToTitle(chapterSlug.replace(/-chapter-.+$/i, "")),
+      chapter: firstString(payload, ["chapter", "chapterTitle", "title", "name"]) || slugToTitle(chapterSlug),
       images,
+      prevChapter: asString(navigation.prev) || undefined,
+      nextChapter: asString(navigation.next) || undefined,
       mangaSlug: chapterSlug.replace(/-chapter-.+$/i, ""),
     };
   } catch (error) {
-    console.error("Error fetching chapter pages from Sankavollerei Komikindo API:", error);
+    console.error("Error fetching chapter pages from BacaKomik API:", error);
     return null;
   }
 }
@@ -452,9 +418,10 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
 export async function searchManga(query: string, page = 1): Promise<SearchResult[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
-  const payload = await getJson(`${API_PREFIX}/search/${encodeURIComponent(cleanQuery)}/${page}`);
+  const payload = await getJson(`${API_PREFIX}/search/${encodeURIComponent(cleanQuery)}`);
+  const pageItems = paginateItems(mapItems(payload, 100), page);
 
-  return mapItems(payload, PAGE_SIZE).map((item) => ({
+  return pageItems.map((item) => ({
     id: item.id,
     title: item.title,
     cover: item.cover,
@@ -467,14 +434,32 @@ export async function searchManga(query: string, page = 1): Promise<SearchResult
 export async function getMangaList(filters: MangaListFilters): Promise<MangaListResponse> {
   const currentPage = Math.max(1, filters.halaman || 1);
   const search = filters.s?.trim();
+  const type = normalizeFilterValue(filters.tipe);
+  const genre = normalizeFilterValue(filters.genre || filters.genre2);
+  const orderby = normalizeFilterValue(filters.orderby);
 
   try {
-    const payload = search
-      ? await getJson(`${API_PREFIX}/search/${encodeURIComponent(search)}/${currentPage}`)
-      : await getJson(`${API_PREFIX}/library`, buildLibraryParams(filters, currentPage));
+    let payload: unknown | null;
 
-    const manga = mapItems(payload, PAGE_SIZE);
-    const totalPages = getTotalPages(payload, currentPage, manga.length);
+    if (search) {
+      payload = await getJson(`${API_PREFIX}/search/${encodeURIComponent(search)}`);
+    } else if (genre === "berwarna" || genre === "komikberwarna") {
+      payload = await getJson(`${API_PREFIX}/komikberwarna/${currentPage}`);
+    } else if (genre) {
+      payload = await getJson(`${API_PREFIX}/genre/${encodeURIComponent(genre)}`);
+    } else if (type && ["manga", "manhwa", "manhua"].includes(type)) {
+      payload = await getJson(`${API_PREFIX}/only/${type}`);
+    } else if (orderby === "popular" || orderby === "populer") {
+      payload = await getJson(`${API_PREFIX}/populer`);
+    } else if (orderby === "top") {
+      payload = await getJson(`${API_PREFIX}/top`);
+    } else {
+      payload = await getJson(`${API_PREFIX}/latest`);
+    }
+
+    const allItems = mapItems(payload, 200);
+    const manga = genre === "berwarna" || genre === "komikberwarna" ? allItems.slice(0, PAGE_SIZE) : paginateItems(allItems, currentPage);
+    const totalPages = Math.max(1, Math.ceil(allItems.length / PAGE_SIZE));
 
     return {
       manga,
@@ -486,7 +471,7 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
       },
     };
   } catch (error) {
-    console.error("Error fetching manga list from Sankavollerei Komikindo API:", error);
+    console.error("Error fetching manga list from BacaKomik API:", error);
     return {
       manga: [],
       pagination: {
@@ -502,16 +487,16 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
 export async function getGenreList(): Promise<{ name: string; slug: string }[]> {
   try {
     const payload = await getJson(`${API_PREFIX}/genres`);
-    const raw = Array.isArray(payload) ? payload : isRecord(payload) ? firstArray(payload, ["data", "results", "genres", "genre"]) : [];
+    const raw = Array.isArray(payload) ? payload : isRecord(payload) ? firstArray(payload, ["genres", "genre", "data", "results", "items"]) : [];
     return raw
       .map((genre) => {
         const name = typeof genre === "string" ? genre : isRecord(genre) ? firstString(genre, ["name", "title", "genre", "slug"]) : "";
-        const slug = isRecord(genre) ? firstString(genre, ["slug", "id", "endpoint"]) || slugify(name) : slugify(name);
+        const slug = isRecord(genre) ? firstString(genre, ["slug", "id", "endpoint", "value"]) || slugify(name) : slugify(name);
         return name ? { name, slug } : null;
       })
       .filter(isPresent);
   } catch (error) {
-    console.error("Error fetching genre list from Sankavollerei Komikindo API:", error);
+    console.error("Error fetching genre list from BacaKomik API:", error);
     return [];
   }
 }
