@@ -109,11 +109,6 @@ function collectImageUrls(value: unknown, depth = 0): string[] {
   return [...preferred, ...nested];
 }
 
-function proxyImageUrl(url: string): string {
-  if (!/^https?:\/\//i.test(url)) return url;
-  return `/api/image?url=${encodeURIComponent(url)}`;
-}
-
 function uniqueStrings(items: string[]): string[] {
   return Array.from(new Set(items.filter(Boolean)));
 }
@@ -136,8 +131,7 @@ async function getDirectChapterFallback(url: string): Promise<ChapterPage | null
 
       if (!response.ok) continue;
       const payload = await response.json();
-      const rawImages = uniqueStrings(collectImageUrls(payload));
-      const images = rawImages.map(proxyImageUrl);
+      const images = uniqueStrings(collectImageUrls(payload));
       if (!images.length) continue;
 
       const navigation = isRecord(payload.navigation) ? payload.navigation : {};
