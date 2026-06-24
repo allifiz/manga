@@ -21,6 +21,45 @@ interface MangaDetail {
   chapters: { number: string; time: string; url: string; isNew?: boolean }[];
 }
 
+function chapterNumber(value: string): number | null {
+  const match = value.match(/(?:chapter|ch\.?|bab)?\s*([0-9]+(?:\.[0-9]+)?)/i);
+  if (!match?.[1]) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function pickStartChapter(manga: MangaDetail) {
+  return manga.chapters[manga.chapters.length - 1] ?? manga.chapters[0] ?? null;
+}
+
+function pickContinueChapter(manga: MangaDetail, lastReadUrl: string | null) {
+  if (!lastReadUrl) return pickStartChapter(manga);
+
+  const currentIndex = manga.chapters.findIndex((chapter) => chapter.url === lastReadUrl);
+  const current = currentIndex >= 0 ? manga.chapters[currentIndex] : null;
+  if (!current) return pickStartChapter(manga);
+
+  const currentNumber = chapterNumber(current.number) ?? chapterNumber(current.url);
+  if (currentNumber !== null) {
+    const nextByNumber = manga.chapters
+      .map((chapter) => ({ chapter, number: chapterNumber(chapter.number) ?? chapterNumber(chapter.url) }))
+      .filter((item): item is { chapter: MangaDetail["chapters"][number]; number: number } => item.number !== null && item.number > currentNumber)
+      .sort((a, b) => a.number - b.number)[0]?.chapter;
+
+    if (nextByNumber) return nextByNumber;
+  }
+
+  // Most chapter lists are newest-first. If the user just read chapter 20,
+  // the chronological next chapter is usually one position before it.
+  return manga.chapters[currentIndex - 1] ?? manga.chapters[currentIndex + 1] ?? current;
+}
+
+function isUsefulValue(value: string | undefined | null): boolean {
+  if (!value) return false;
+  const clean = value.trim().toLowerCase();
+  return Boolean(clean) && !["n/a", "na", "-", "unknown", "undefined", "null"].includes(clean);
+}
+
 export default function MangaDetailPage() {
   const params = useParams();
   const slug = params.slug as string;
@@ -30,6 +69,7 @@ export default function MangaDetailPage() {
   const [imgError, setImgError] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
   const [readSet, setReadSet] = useState<Set<string>>(new Set());
+  const [lastReadUrl, setLastReadUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (slug) {
@@ -43,7 +83,6 @@ export default function MangaDetailPage() {
     }
   }, [slug]);
 
-  // bookmark status
   useEffect(() => {
     if (!slug) return;
     try {
@@ -55,7 +94,6 @@ export default function MangaDetailPage() {
     } catch (e) {}
   }, [slug]);
 
-  // load read chapters for this manga
   useEffect(() => {
     if (!slug) return;
     try {
@@ -63,8 +101,10 @@ export default function MangaDetailPage() {
       const map = raw ? JSON.parse(raw) : {};
       const arr = Array.isArray(map[slug]) ? map[slug] : [];
       setReadSet(new Set(arr));
+      setLastReadUrl(arr[arr.length - 1] ?? null);
     } catch (e) {
       setReadSet(new Set());
+      setLastReadUrl(null);
     }
   }, [slug, manga]);
 
@@ -85,6 +125,7 @@ export default function MangaDetailPage() {
       map[slug] = updatedArr;
       localStorage.setItem(key, JSON.stringify(map));
       setReadSet(new Set(updatedArr));
+      setLastReadUrl(updatedArr[updatedArr.length - 1] ?? null);
     } catch (e) {
       console.error(e);
     }
@@ -112,12 +153,8 @@ export default function MangaDetailPage() {
     }
   };
 
-  // Computed: chapter pertama yang belum dibaca (dari terlama ke terbaru)
-  const nextUnreadChapter = manga
-    ? ([...manga.chapters].reverse().find((ch) => !readSet.has(ch.url)) ?? manga.chapters[manga.chapters.length - 1])
-    : null;
-
-  const hasStartedReading = manga ? manga.chapters.some((ch) => readSet.has(ch.url)) : false;
+  const continueChapter = manga ? pickContinueChapter(manga, lastReadUrl) : null;
+  const hasStartedReading = Boolean(lastReadUrl) || (manga ? manga.chapters.some((ch) => readSet.has(ch.url)) : false);
 
   if (loading) {
     return (
@@ -153,11 +190,15 @@ export default function MangaDetailPage() {
     );
   }
 
-  const firstChapter = manga.chapters[manga.chapters.length - 1];
+  const stats = [
+    { label: "Rating", value: manga.rating || "N/A", color: "text-yellow-400", show: true },
+    { label: "Pembaca", value: manga.views || "", color: "text-blue-400", show: isUsefulValue(manga.views) },
+    { label: "Chapters", value: manga.chapters_count || "0", color: "text-green-400", show: true },
+    { label: "Tipe", value: manga.type || manga.format || "-", color: "text-primary", show: true },
+  ].filter((stat) => stat.show);
 
   return (
     <div className="min-h-screen bg-[#050508] pb-24 relative overflow-hidden">
-      {/* Top Navigation */}
       <div className="sticky top-0 z-50 bg-[#050508]/80 backdrop-blur-md border-b border-border/80">
         <div className="max-w-2xl mx-auto flex items-center gap-3 h-14 px-4">
           <button
@@ -184,41 +225,29 @@ export default function MangaDetailPage() {
       </div>
 
       <div className="max-w-2xl mx-auto relative z-10 px-4">
-        {/* Cinematic Backdrop */}
         <div className="absolute top-0 left-0 right-0 h-[280px] overflow-hidden -mx-4 pointer-events-none z-0">
-          {!imgError ? (
-            <img src={manga.cover} alt="" className="w-full h-full object-cover blur-[50px] opacity-20 scale-110" />
-          ) : null}
+          {!imgError ? <img src={manga.cover} alt="" className="w-full h-full object-cover blur-[50px] opacity-20 scale-110" /> : null}
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#050508]/40 to-[#050508]" />
         </div>
 
-        {/* Cover & Title */}
         <div className="relative z-10 flex flex-col items-center pt-8 pb-4">
           <div className="w-44 h-64 rounded-2xl overflow-hidden mb-5 relative shadow-[0_12px_36px_rgba(0,0,0,0.6)] border border-white/10">
             {!imgError ? (
-              <img
-                src={manga.cover}
-                alt={manga.title}
-                className="w-full h-full object-cover"
-                onError={() => setImgError(true)}
-              />
+              <img src={manga.cover} alt={manga.title} className="w-full h-full object-cover" onError={() => setImgError(true)} />
             ) : (
               <div className="w-full h-full bg-card-bg flex items-center justify-center">
                 <span className="text-muted">No Cover</span>
               </div>
             )}
           </div>
-          <h1 className="text-white font-black text-xl md:text-2xl text-center mb-1.5 tracking-tight px-4 leading-tight">
-            {manga.title}
-          </h1>
+          <h1 className="text-white font-black text-xl md:text-2xl text-center mb-1.5 tracking-tight px-4 leading-tight">{manga.title}</h1>
           {manga.altTitle && <p className="text-muted text-xs text-center mb-4 px-6 font-medium">{manga.altTitle}</p>}
         </div>
 
-        {/* Action Buttons */}
         <div className="relative z-10 space-y-3 mb-6">
-          {firstChapter && nextUnreadChapter && (
+          {continueChapter && (
             <Link
-              href={`/read?u=${encodeURIComponent(btoa(nextUnreadChapter.url))}`}
+              href={`/read?u=${encodeURIComponent(btoa(continueChapter.url))}`}
               className="flex items-center justify-center gap-2 w-full py-3.5 bg-primary hover:bg-primary-hover text-white rounded-2xl font-bold text-sm transition-all shadow-[0_4px_20px_rgba(139,92,246,0.35)] hover:shadow-[0_4px_25px_rgba(139,92,246,0.5)] active:scale-[0.99]"
             >
               <svg className="w-5 h-5 fill-current" viewBox="0 0 20 20">
@@ -235,23 +264,11 @@ export default function MangaDetailPage() {
             <button
               onClick={toggleBookmark}
               className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-[0.98] ${
-                bookmarked
-                  ? "bg-primary text-white"
-                  : "bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-white"
+                bookmarked ? "bg-primary text-white" : "bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-white"
               }`}
             >
-              <svg
-                className="w-4 h-4"
-                fill={bookmarked ? "currentColor" : "none"}
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                />
+              <svg className="w-4 h-4" fill={bookmarked ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
               </svg>
               {bookmarked ? "Bookmarked" : "Bookmark"}
             </button>
@@ -264,14 +281,8 @@ export default function MangaDetailPage() {
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-4 gap-3 mb-6 relative z-10">
-          {[
-            { label: "Rating", value: manga.rating || "N/A", color: "text-yellow-400" },
-            { label: "Pembaca", value: manga.views || "N/A", color: "text-blue-400" },
-            { label: "Chapters", value: manga.chapters_count || "0", color: "text-green-400" },
-            { label: "Tipe", value: manga.type || manga.format || "-", color: "text-primary" },
-          ].map((stat, idx) => (
+        <div className={`grid ${stats.length === 4 ? "grid-cols-4" : "grid-cols-3"} gap-3 mb-6 relative z-10`}>
+          {stats.map((stat, idx) => (
             <div key={idx} className="bg-white/5 border border-white/5 rounded-2xl py-3 px-1 text-center shadow-sm">
               <p className={`font-black text-base md:text-lg ${stat.color}`}>{stat.value}</p>
               <p className="text-muted text-[10px] uppercase font-bold tracking-wider mt-0.5">{stat.label}</p>
@@ -279,7 +290,6 @@ export default function MangaDetailPage() {
           ))}
         </div>
 
-        {/* Synopsis */}
         {manga.synopsis && (
           <div className="mb-6 relative z-10 bg-white/[0.02] border border-white/5 rounded-2xl p-4 shadow-sm">
             <h3 className="text-white font-bold text-sm mb-2 relative pl-3 before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-3.5 before:bg-primary before:rounded-full">
@@ -289,17 +299,17 @@ export default function MangaDetailPage() {
           </div>
         )}
 
-        {/* Genres & Details */}
         <div className="mb-6 relative z-10">
           {manga.genres.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-4">
               {manga.genres.map((genre, idx) => (
-                <span
+                <Link
                   key={idx}
+                  href={`/explore?genre=${genre.slug}`}
                   className="px-3 py-1 bg-white/5 border border-white/5 text-muted text-xs rounded-full hover:bg-primary hover:text-white hover:border-primary/50 cursor-pointer transition-all duration-200"
                 >
                   {genre.name}
-                </span>
+                </Link>
               ))}
             </div>
           )}
@@ -325,7 +335,6 @@ export default function MangaDetailPage() {
           </div>
         </div>
 
-        {/* Tabs Switcher */}
         <div className="border-b border-border/60 mb-4 relative z-10">
           <div className="flex p-0.5 rounded-full bg-white/5 border border-white/5 max-w-xs mb-3">
             {(["chapters", "info"] as const).map((tab) => (
@@ -333,9 +342,7 @@ export default function MangaDetailPage() {
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`flex-1 py-2 text-xs font-bold rounded-full transition-all duration-200 ${
-                  activeTab === tab
-                    ? "bg-primary text-white shadow-[0_2px_10px_rgba(139,92,246,0.3)]"
-                    : "text-muted hover:text-white"
+                  activeTab === tab ? "bg-primary text-white shadow-[0_2px_10px_rgba(139,92,246,0.3)]" : "text-muted hover:text-white"
                 }`}
               >
                 {tab === "chapters" ? `Chapters (${manga.chapters.length})` : "Info Lengkap"}
@@ -344,7 +351,6 @@ export default function MangaDetailPage() {
           </div>
         </div>
 
-        {/* Chapter List */}
         {activeTab === "chapters" && (
           <div className="relative z-10">
             {manga.chapters.length > 0 ? (
@@ -360,11 +366,7 @@ export default function MangaDetailPage() {
                         }`}
                       >
                         <div className="flex items-center gap-2.5">
-                          {ch.isNew && !isRead && (
-                            <span className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow">
-                              UP
-                            </span>
-                          )}
+                          {ch.isNew && !isRead && <span className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow">UP</span>}
                           {isRead && (
                             <svg className="w-3 h-3 text-primary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                               <path
@@ -374,34 +376,19 @@ export default function MangaDetailPage() {
                               />
                             </svg>
                           )}
-                          <span
-                            className={`text-xs font-bold transition-colors duration-150 ${
-                              isRead ? "text-muted/50" : "text-muted group-hover:text-primary"
-                            }`}
-                          >
-                            {ch.number}
-                          </span>
+                          <span className={`text-xs font-bold transition-colors duration-150 ${isRead ? "text-muted/50" : "text-muted group-hover:text-primary"}`}>{ch.number}</span>
                         </div>
                         <span className="text-muted/50 text-[10px] font-medium">{ch.time}</span>
                       </Link>
-                      {/* Toggle read button */}
                       <button
                         onClick={(e) => {
                           e.preventDefault();
                           toggleChapterRead(ch.url);
                         }}
-                        className={`p-2 rounded-lg transition-all active:scale-90 ${
-                          isRead ? "text-primary hover:text-muted/50" : "text-muted/30 hover:text-primary"
-                        }`}
+                        className={`p-2 rounded-lg transition-all active:scale-90 ${isRead ? "text-primary hover:text-muted/50" : "text-muted/30 hover:text-primary"}`}
                         title={isRead ? "Tandai belum dibaca" : "Tandai sudah dibaca"}
                       >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2.5}
-                        >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                         </svg>
                       </button>
@@ -410,14 +397,11 @@ export default function MangaDetailPage() {
                 })}
               </div>
             ) : (
-              <p className="text-muted text-xs py-8 text-center bg-card-bg/40 rounded-2xl border border-border">
-                Tidak ada chapter tersedia
-              </p>
+              <p className="text-muted text-xs py-8 text-center bg-card-bg/40 rounded-2xl border border-border">Tidak ada chapter tersedia</p>
             )}
           </div>
         )}
 
-        {/* Info Tab */}
         {activeTab === "info" && (
           <div className="relative z-10 space-y-3">
             <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4">

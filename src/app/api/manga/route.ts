@@ -12,8 +12,8 @@ export async function GET(request: NextRequest) {
       genre2: searchParams.get("genre2") || undefined,
       status: searchParams.get("status") || undefined,
       orderby: searchParams.get("orderby") || undefined,
-      halaman: parseInt(searchParams.get("page") || "1"),
-      s: searchParams.get("s") || undefined,
+      halaman: parseInt(searchParams.get("halaman") || searchParams.get("page") || "1", 10),
+      s: searchParams.get("s") || searchParams.get("q") || undefined,
     };
 
     const data = await getMangaList(filters);

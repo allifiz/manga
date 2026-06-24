@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, Suspense, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import MangaCard from "@/components/MangaCard";
 
 interface SearchResult {
@@ -13,6 +13,7 @@ interface SearchResult {
 }
 
 function SearchContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const query = searchParams.get("q") || "";
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -20,29 +21,38 @@ function SearchContent() {
   const [searchInput, setSearchInput] = useState(query);
 
   const performSearch = useCallback((q: string) => {
+    const keyword = q.trim();
+    if (!keyword) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    fetch(`/api/manga?s=${encodeURIComponent(q)}`)
+    fetch(`/api/search?q=${encodeURIComponent(keyword)}`)
       .then((res) => res.json())
       .then((d) => {
-        setResults(d.manga || []);
+        setResults(d.results || d.manga || []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
   useEffect(() => {
+    setSearchInput(query);
     if (query) {
-      setSearchInput(query);
       performSearch(query);
+    } else {
+      setResults([]);
     }
   }, [query, performSearch]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchInput.trim()) {
-      window.history.pushState(null, "", `/search?q=${encodeURIComponent(searchInput.trim())}`);
-      performSearch(searchInput.trim());
-    }
+    const keyword = searchInput.trim();
+    if (!keyword) return;
+    router.push(`/search?q=${encodeURIComponent(keyword)}`);
+    performSearch(keyword);
   };
 
   const genres = [
@@ -52,13 +62,11 @@ function SearchContent() {
 
   return (
     <main className="flex-1 max-w-2xl mx-auto w-full pb-32 px-4">
-      {/* Search Header */}
       <div className="py-8 text-center">
         <h1 className="text-white font-black text-3xl mb-2 tracking-tight">Cari Manga</h1>
         <p className="text-muted text-sm">Temukan ribuan judul manga favoritmu</p>
       </div>
 
-      {/* Search Form */}
       <form onSubmit={handleSubmit} className="mb-10">
         <div className="relative group">
           <input
@@ -79,7 +87,6 @@ function SearchContent() {
         </div>
       </form>
 
-      {/* Genre Quick Links */}
       {!query && results.length === 0 && (
         <div className="animate-fade-in">
           <h3 className="text-white font-black text-[10px] uppercase tracking-[0.2em] mb-4 text-center opacity-50">Genre Populer</h3>
@@ -89,7 +96,7 @@ function SearchContent() {
                 key={genre}
                 onClick={() => {
                   setSearchInput(genre);
-                  window.history.pushState(null, "", `/search?q=${encodeURIComponent(genre)}`);
+                  router.push(`/search?q=${encodeURIComponent(genre)}`);
                   performSearch(genre);
                 }}
                 className="px-5 py-2.5 bg-white/5 text-muted text-xs font-bold rounded-xl hover:bg-primary hover:text-white transition-all duration-300 border border-white/5 hover:border-primary hover:shadow-lg hover:shadow-primary/20"
@@ -101,7 +108,6 @@ function SearchContent() {
         </div>
       )}
 
-      {/* Results */}
       <div className="mt-4">
         {loading ? (
           <div className="space-y-4">
@@ -118,8 +124,8 @@ function SearchContent() {
         ) : results.length > 0 ? (
           <div className="space-y-2 animate-fade-in">
             <p className="text-muted text-[10px] font-black uppercase tracking-widest mb-4 px-2">Hasil Pencarian ({results.length})</p>
-            {results.map((result, idx) => (
-              <MangaCard key={idx} {...result} />
+            {results.map((result) => (
+              <MangaCard key={result.id} {...result} />
             ))}
           </div>
         ) : query ? (
