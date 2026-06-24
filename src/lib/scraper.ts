@@ -1,12 +1,9 @@
 import axios, { AxiosInstance } from "axios";
 
-const API_BASE_URL = (
-  process.env.SANKA_API_BASE_URL ||
-  process.env.COMIC_API_BASE_URL ||
-  "https://www.sankavollerei.web.id"
-).replace(/\/+$/, "");
-
-const API_PREFIX = "/comic/bacakomik";
+const PROXY_API_BASE_URL = process.env.COMIC_API_BASE_URL?.trim();
+const SANKA_API_BASE_URL = (process.env.SANKA_API_BASE_URL || "https://www.sankavollerei.web.id").trim();
+const USE_PROXY_API = Boolean(PROXY_API_BASE_URL && !process.env.SANKA_API_BASE_URL);
+const API_BASE_URL = (USE_PROXY_API ? PROXY_API_BASE_URL : SANKA_API_BASE_URL).replace(/\/+$/, "");
 const PAGE_SIZE = 10;
 const PLACEHOLDER_COVER = "https://via.placeholder.com/300x450/1A1A1A/666?text=No+Cover";
 
@@ -87,6 +84,19 @@ export interface MangaListResponse {
 type ApiRecord = Record<string, unknown>;
 type DetailChapter = MangaDetail["chapters"][number];
 
+type EndpointName =
+  | "latest"
+  | "popular"
+  | "recommended"
+  | "top"
+  | "genres"
+  | "genre"
+  | "search"
+  | "detail"
+  | "chapter"
+  | "only"
+  | "colored";
+
 function createClient(baseURL: string): AxiosInstance {
   return axios.create({
     baseURL,
@@ -95,14 +105,71 @@ function createClient(baseURL: string): AxiosInstance {
       Accept: "application/json",
       "Cache-Control": "no-cache",
       Pragma: "no-cache",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      "User-Agent": USE_PROXY_API
+        ? "manga-frontend/1.0"
+        : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     },
     validateStatus: (status) => status >= 200 && status < 500,
   });
 }
 
 const api = createClient(API_BASE_URL);
+
+function endpoint(name: EndpointName, value?: string | number): string {
+  const segment = value !== undefined ? String(value) : "";
+
+  if (USE_PROXY_API) {
+    switch (name) {
+      case "latest":
+        return "/comic/latest";
+      case "popular":
+        return "/comic/popular";
+      case "recommended":
+        return "/comic/recommended";
+      case "top":
+        return "/comic/top";
+      case "genres":
+        return "/comic/genres";
+      case "genre":
+        return `/comic/genre/${encodeURIComponent(segment)}`;
+      case "search":
+        return `/comic/search?q=${encodeURIComponent(segment)}`;
+      case "detail":
+        return `/comic/detail/${encodeURIComponent(segment)}`;
+      case "chapter":
+        return `/comic/chapter/${encodeURIComponent(segment)}`;
+      case "only":
+        return `/comic/only/${encodeURIComponent(segment)}`;
+      case "colored":
+        return `/comic/genre/berwarna`;
+    }
+  }
+
+  switch (name) {
+    case "latest":
+      return "/comic/bacakomik/latest";
+    case "popular":
+      return "/comic/bacakomik/populer";
+    case "recommended":
+      return "/comic/bacakomik/recomen";
+    case "top":
+      return "/comic/bacakomik/top";
+    case "genres":
+      return "/comic/bacakomik/genres";
+    case "genre":
+      return `/comic/bacakomik/genre/${encodeURIComponent(segment)}`;
+    case "search":
+      return `/comic/bacakomik/search/${encodeURIComponent(segment)}`;
+    case "detail":
+      return `/comic/bacakomik/detail/${encodeURIComponent(segment)}`;
+    case "chapter":
+      return `/comic/bacakomik/chapter/${encodeURIComponent(segment)}`;
+    case "only":
+      return `/comic/bacakomik/only/${encodeURIComponent(segment)}`;
+    case "colored":
+      return `/comic/bacakomik/komikberwarna/${encodeURIComponent(segment)}`;
+  }
+}
 
 function isRecord(value: unknown): value is ApiRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -133,8 +200,7 @@ function slugToTitle(slug: string): string {
 
 function firstString(record: ApiRecord, keys: string[]): string {
   for (const key of keys) {
-    const value = record[key];
-    const text = asString(value);
+    const text = asString(record[key]);
     if (text) return text;
   }
   return "";
@@ -297,13 +363,12 @@ function paginateItems<T>(items: T[], page: number, pageSize = PAGE_SIZE): T[] {
 
 async function getJson(path: string): Promise<unknown | null> {
   try {
-    const { data, status, headers } = await api.get(path, {
-      params: { _: Date.now() },
-    });
+    const params = path.includes("?") ? { _: Date.now() } : { _: Date.now() };
+    const { data, status, headers } = await api.get(path, { params });
     const contentType = String(headers["content-type"] || "");
     if (status >= 200 && status < 300 && (contentType.includes("json") || typeof data === "object")) return data;
   } catch (error) {
-    console.error(`BacaKomik API failed: ${path}`, error);
+    console.error(`${USE_PROXY_API ? "Apimanga proxy" : "BacaKomik API"} failed: ${path}`, error);
   }
   return null;
 }
@@ -315,10 +380,10 @@ function fallbackHome(): HomePageData {
 export async function getHomePage(): Promise<HomePageData> {
   try {
     const [latest, popular, recommended, top] = await Promise.all([
-      getJson(`${API_PREFIX}/latest`),
-      getJson(`${API_PREFIX}/populer`),
-      getJson(`${API_PREFIX}/recomen`),
-      getJson(`${API_PREFIX}/top`),
+      getJson(endpoint("latest")),
+      getJson(endpoint("popular")),
+      getJson(endpoint("recommended")),
+      getJson(endpoint("top")),
     ]);
 
     const latestItems = mapItems(latest, 24);
@@ -333,7 +398,7 @@ export async function getHomePage(): Promise<HomePageData> {
       popular: uniqueById([...popularItems, ...topItems]).slice(0, 12),
     };
   } catch (error) {
-    console.error("Error fetching homepage from BacaKomik API:", error);
+    console.error("Error fetching homepage:", error);
     return fallbackHome();
   }
 }
@@ -374,7 +439,7 @@ function detailFromPayload(payload: unknown, slug: string): MangaDetail | null {
 
 export async function getMangaDetail(slug: string): Promise<MangaDetail | null> {
   const cleanSlug = slugify(slug);
-  const payload = await getJson(`${API_PREFIX}/detail/${cleanSlug}`);
+  const payload = await getJson(endpoint("detail", cleanSlug));
   return detailFromPayload(payload, cleanSlug);
 }
 
@@ -394,7 +459,7 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
   if (!chapterSlug) return null;
 
   try {
-    const payload = await getJson(`${API_PREFIX}/chapter/${chapterSlug}`);
+    const payload = await getJson(endpoint("chapter", chapterSlug));
     if (!payload || !isRecord(payload)) return null;
 
     const rawImages = Array.isArray(payload.images) ? payload.images : Array.isArray(payload.data) ? payload.data : [];
@@ -410,7 +475,7 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
       mangaSlug: chapterSlug.replace(/-chapter-.+$/i, ""),
     };
   } catch (error) {
-    console.error("Error fetching chapter pages from BacaKomik API:", error);
+    console.error("Error fetching chapter pages:", error);
     return null;
   }
 }
@@ -418,7 +483,7 @@ export async function getChapterPages(url: string): Promise<ChapterPage | null> 
 export async function searchManga(query: string, page = 1): Promise<SearchResult[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
-  const payload = await getJson(`${API_PREFIX}/search/${encodeURIComponent(cleanQuery)}`);
+  const payload = await getJson(endpoint("search", cleanQuery));
   const pageItems = paginateItems(mapItems(payload, 100), page);
 
   return pageItems.map((item) => ({
@@ -442,19 +507,19 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
     let payload: unknown | null;
 
     if (search) {
-      payload = await getJson(`${API_PREFIX}/search/${encodeURIComponent(search)}`);
+      payload = await getJson(endpoint("search", search));
     } else if (genre === "berwarna" || genre === "komikberwarna") {
-      payload = await getJson(`${API_PREFIX}/komikberwarna/${currentPage}`);
+      payload = await getJson(endpoint("colored", currentPage));
     } else if (genre) {
-      payload = await getJson(`${API_PREFIX}/genre/${encodeURIComponent(genre)}`);
+      payload = await getJson(endpoint("genre", genre));
     } else if (type && ["manga", "manhwa", "manhua"].includes(type)) {
-      payload = await getJson(`${API_PREFIX}/only/${type}`);
+      payload = await getJson(endpoint("only", type));
     } else if (orderby === "popular" || orderby === "populer") {
-      payload = await getJson(`${API_PREFIX}/populer`);
+      payload = await getJson(endpoint("popular"));
     } else if (orderby === "top") {
-      payload = await getJson(`${API_PREFIX}/top`);
+      payload = await getJson(endpoint("top"));
     } else {
-      payload = await getJson(`${API_PREFIX}/latest`);
+      payload = await getJson(endpoint("latest"));
     }
 
     const allItems = mapItems(payload, 200);
@@ -471,7 +536,7 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
       },
     };
   } catch (error) {
-    console.error("Error fetching manga list from BacaKomik API:", error);
+    console.error("Error fetching manga list:", error);
     return {
       manga: [],
       pagination: {
@@ -486,7 +551,7 @@ export async function getMangaList(filters: MangaListFilters): Promise<MangaList
 
 export async function getGenreList(): Promise<{ name: string; slug: string }[]> {
   try {
-    const payload = await getJson(`${API_PREFIX}/genres`);
+    const payload = await getJson(endpoint("genres"));
     const raw = Array.isArray(payload) ? payload : isRecord(payload) ? firstArray(payload, ["genres", "genre", "data", "results", "items"]) : [];
     return raw
       .map((genre) => {
@@ -496,7 +561,7 @@ export async function getGenreList(): Promise<{ name: string; slug: string }[]> 
       })
       .filter(isPresent);
   } catch (error) {
-    console.error("Error fetching genre list from BacaKomik API:", error);
+    console.error("Error fetching genre list:", error);
     return [];
   }
 }

@@ -3,13 +3,17 @@ import { getChapterPages, ChapterPage } from "@/lib/scraper";
 
 export const dynamic = "force-dynamic";
 
+const USE_PROXY_API = Boolean(process.env.COMIC_API_BASE_URL && !process.env.SANKA_API_BASE_URL);
 const API_BASE_URL = (
   process.env.SANKA_API_BASE_URL ||
   process.env.COMIC_API_BASE_URL ||
   "https://www.sankavollerei.web.id"
 ).replace(/\/+$/, "");
 
-const API_PREFIX = "/comic/bacakomik";
+function chapterEndpoint(chapterSlug: string): string {
+  if (USE_PROXY_API) return `${API_BASE_URL}/comic/chapter/${encodeURIComponent(chapterSlug)}?_=${Date.now()}`;
+  return `${API_BASE_URL}/comic/bacakomik/chapter/${encodeURIComponent(chapterSlug)}?_=${Date.now()}`;
+}
 
 type ApiRecord = Record<string, unknown>;
 
@@ -118,14 +122,15 @@ async function getDirectChapterFallback(url: string): Promise<ChapterPage | null
 
   for (const chapterSlug of candidates) {
     try {
-      const response = await fetch(`${API_BASE_URL}${API_PREFIX}/chapter/${encodeURIComponent(chapterSlug)}?_=${Date.now()}`, {
+      const response = await fetch(chapterEndpoint(chapterSlug), {
         cache: "no-store",
         headers: {
           Accept: "application/json",
           "Cache-Control": "no-cache",
           Pragma: "no-cache",
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "User-Agent": USE_PROXY_API
+            ? "manga-frontend/1.0"
+            : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         },
       });
 
@@ -147,7 +152,7 @@ async function getDirectChapterFallback(url: string): Promise<ChapterPage | null
         mangaSlug: chapterSlug.replace(/-chapter-.+$/i, ""),
       };
     } catch (error) {
-      console.error("Direct BacaKomik chapter fallback failed:", error);
+      console.error(`${USE_PROXY_API ? "Direct apimanga" : "Direct BacaKomik"} chapter fallback failed:`, error);
     }
   }
 
