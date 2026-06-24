@@ -13,6 +13,40 @@ interface ChapterData {
   mangaSlug?: string;
 }
 
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function chapterSlugFromInput(value: string): string {
+  const clean = value.trim();
+  const legacyMatch = clean.match(/\/komik\/[^/]+\/([^/?#]+)/);
+  if (legacyMatch?.[1]) return legacyMatch[1];
+  const chapterMatch = clean.match(/\/chapter\/([^/?#]+)/);
+  if (chapterMatch?.[1]) return chapterMatch[1];
+  const slugMatch = clean.match(/([^/]+-chapter-[^/?#]+)/i);
+  if (slugMatch?.[1]) return slugMatch[1];
+  return slugify(clean);
+}
+
+function mangaSlugFromChapter(chapterSlug: string): string {
+  return chapterSlug.replace(/-chapter-.+$/i, "");
+}
+
+function canonicalChapterUrl(mangaSlug: string | undefined, input: string): string {
+  const chapterSlug = chapterSlugFromInput(input);
+  const cleanMangaSlug = mangaSlug || mangaSlugFromChapter(chapterSlug);
+  return `/komik/${cleanMangaSlug}/${chapterSlug}`;
+}
+
+function makeReadHref(mangaSlug: string | undefined, chapter: string): string {
+  return `/read?u=${encodeURIComponent(btoa(canonicalChapterUrl(mangaSlug, chapter)))}`;
+}
+
 function ReadContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -27,6 +61,7 @@ function ReadContent() {
       url = "";
     }
   }
+
   const [data, setData] = useState<ChapterData | null>(null);
   const [loading, setLoading] = useState(true);
   const [imgErrors, setImgErrors] = useState<Set<number>>(new Set());
@@ -34,49 +69,47 @@ function ReadContent() {
   const [showControls, setShowControls] = useState(false);
 
   useEffect(() => {
-    if (url) {
-      setLoading(true);
-      fetch(`/api/read?u=${encodeURIComponent(btoa(url))}`)
-        .then((res) => res.json())
-        .then((d) => {
-          setData(d);
-          // mark chapter as read for this manga
-          try {
-            if (d?.mangaSlug && url) {
-              const key = "manga_reads";
-              const raw = localStorage.getItem(key);
-              const map = raw ? JSON.parse(raw) : {};
-              const arr = Array.isArray(map[d.mangaSlug]) ? map[d.mangaSlug] : [];
-              if (!arr.includes(url)) {
-                arr.push(url);
-                map[d.mangaSlug] = arr;
-                localStorage.setItem(key, JSON.stringify(map));
-              }
-            }
-          } catch (e) {}
-          setLoading(false);
-          window.scrollTo(0, 0);
-        })
-        .catch(() => setLoading(false));
-    }
+    if (!url) return;
+
+    setLoading(true);
+    setImgErrors(new Set());
+    fetch(`/api/read?u=${encodeURIComponent(btoa(url))}`)
+      .then((res) => res.json())
+      .then((d) => {
+        setData(d);
+
+        try {
+          const chapterSlug = chapterSlugFromInput(url);
+          const mangaSlug = d?.mangaSlug || mangaSlugFromChapter(chapterSlug);
+          const canonicalUrl = canonicalChapterUrl(mangaSlug, chapterSlug);
+          const key = "manga_reads";
+          const raw = localStorage.getItem(key);
+          const map = raw ? JSON.parse(raw) : {};
+          const arr = Array.isArray(map[mangaSlug]) ? map[mangaSlug].filter((item: string) => item !== canonicalUrl) : [];
+          arr.push(canonicalUrl);
+          map[mangaSlug] = arr;
+          localStorage.setItem(key, JSON.stringify(map));
+        } catch (e) {}
+
+        setLoading(false);
+        window.scrollTo(0, 0);
+      })
+      .catch(() => setLoading(false));
   }, [url]);
 
   useEffect(() => {
     const handleScroll = () => {
       const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
-      if (totalHeight > 0) {
-        setScrollProgress((window.scrollY / totalHeight) * 100);
-      }
+      if (totalHeight > 0) setScrollProgress((window.scrollY / totalHeight) * 100);
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, [data]);
 
-  // Auto-hide controls after inactivity
   useEffect(() => {
     if (!showControls) return;
-    const t = setTimeout(() => setShowControls(false), 3000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setShowControls(false), 3000);
+    return () => clearTimeout(timer);
   }, [showControls]);
 
   const handleImgError = (idx: number) => {
@@ -106,13 +139,8 @@ function ReadContent() {
           />
         </svg>
         <h3 className="text-white font-semibold text-lg mb-2">Chapter Tidak Ditemukan</h3>
-        <p className="text-muted text-sm mb-4 text-center">
-          Halaman chapter tidak dapat dimuat. Kemungkinan situs sumber sedang down.
-        </p>
-        <button
-          onClick={() => router.back()}
-          className="px-6 py-2 bg-primary hover:bg-primary-hover text-white rounded-full text-sm font-medium transition-colors"
-        >
+        <p className="text-muted text-sm mb-4 text-center">Halaman chapter tidak dapat dimuat. Kemungkinan situs sumber sedang down.</p>
+        <button onClick={() => router.back()} className="px-6 py-2 bg-primary hover:bg-primary-hover text-white rounded-full text-sm font-medium transition-colors">
           Kembali
         </button>
       </div>
@@ -121,26 +149,18 @@ function ReadContent() {
 
   return (
     <div className="min-h-screen bg-[#050508] text-foreground pb-24">
-      {/* Top Bar */}
       <div className="sticky top-0 z-40 bg-[#050508]/85 backdrop-blur-md border-b border-border">
-        {/* Scroll Progress Bar */}
-        <div
-          className="absolute bottom-0 left-0 h-[2px] bg-primary transition-all duration-75"
-          style={{ width: `${scrollProgress}%` }}
-        />
+        <div className="absolute bottom-0 left-0 h-[2px] bg-primary transition-all duration-75" style={{ width: `${scrollProgress}%` }} />
         <div className="max-w-3xl mx-auto flex items-center h-14 px-4 justify-between">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.back()}
-              className="text-muted hover:text-white p-1 hover:bg-white/5 rounded-lg transition-colors"
-            >
+            <button onClick={() => router.back()} className="text-muted hover:text-white p-1 hover:bg-white/5 rounded-lg transition-colors">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <div className="min-w-0">
               <h1 className="text-white text-sm font-bold truncate">{data.title}</h1>
-              {data.chapter && <p className="text-primary text-xs font-medium">Ch {data.chapter}</p>}
+              {data.chapter && <p className="text-primary text-xs font-medium">{data.chapter}</p>}
             </div>
           </div>
           <Link href="/" className="text-muted hover:text-white p-1 hover:bg-white/5 rounded-lg transition-colors">
@@ -155,8 +175,7 @@ function ReadContent() {
         </div>
       </div>
 
-      {/* Manga Images */}
-      <div className="max-w-3xl mx-auto py-2 space-y-1" onClick={() => setShowControls((s) => !s)}>
+      <div className="max-w-3xl mx-auto py-2 space-y-1" onClick={() => setShowControls((state) => !state)}>
         {data.images.map((img, idx) => (
           <div key={idx} className="relative select-none">
             {!imgErrors.has(idx) ? (
@@ -171,12 +190,7 @@ function ReadContent() {
             ) : (
               <div className="w-full h-80 bg-card-bg flex items-center justify-center border border-border">
                 <div className="text-center">
-                  <svg
-                    className="w-10 h-10 text-muted/40 mx-auto mb-2"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
+                  <svg className="w-10 h-10 text-muted/40 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -192,7 +206,6 @@ function ReadContent() {
         ))}
       </div>
 
-      {/* Floating Navigation Pill */}
       <div
         className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-1.5 rounded-2xl glass shadow-[0_12px_40px_rgba(0,0,0,0.6)] transition-all duration-200 ${
           showControls ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-6 pointer-events-none"
@@ -201,7 +214,7 @@ function ReadContent() {
       >
         {data.prevChapter ? (
           <Link
-            href={`/read?u=${encodeURIComponent(btoa(String(data.prevChapter)))}`}
+            href={makeReadHref(data.mangaSlug, data.prevChapter)}
             onClick={(e) => e.stopPropagation()}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-white transition-all active:scale-95 border border-white/5"
           >
@@ -212,15 +225,8 @@ function ReadContent() {
             <span className="sm:hidden">Prev</span>
           </Link>
         ) : (
-          <button
-            disabled
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-transparent text-muted/30 cursor-not-allowed"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-            <span className="hidden sm:inline">Sebelumnya</span>
-            <span className="sm:hidden">Prev</span>
+          <button disabled className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-transparent text-muted/30 cursor-not-allowed">
+            <span>Prev</span>
           </button>
         )}
 
@@ -230,9 +236,6 @@ function ReadContent() {
             onClick={(e) => e.stopPropagation()}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-primary hover:bg-primary-hover text-white transition-all shadow-[0_4px_15px_rgba(139,92,246,0.35)] active:scale-95"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
             <span>Daftar</span>
           </Link>
         ) : (
@@ -240,16 +243,13 @@ function ReadContent() {
             onClick={() => router.back()}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-primary hover:bg-primary-hover text-white transition-all shadow-[0_4px_15px_rgba(139,92,246,0.35)] active:scale-95"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
             <span>Daftar</span>
           </button>
         )}
 
         {data.nextChapter ? (
           <Link
-            href={`/read?u=${encodeURIComponent(btoa(String(data.nextChapter)))}`}
+            href={makeReadHref(data.mangaSlug, data.nextChapter)}
             onClick={(e) => e.stopPropagation()}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-white transition-all active:scale-95 border border-white/5"
           >
@@ -260,15 +260,8 @@ function ReadContent() {
             </svg>
           </Link>
         ) : (
-          <button
-            disabled
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-transparent text-muted/30 cursor-not-allowed"
-          >
-            <span className="hidden sm:inline">Selanjutnya</span>
-            <span className="sm:hidden">Next</span>
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
+          <button disabled className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-transparent text-muted/30 cursor-not-allowed">
+            <span>Next</span>
           </button>
         )}
       </div>
