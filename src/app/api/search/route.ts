@@ -27,6 +27,18 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+function getSearchUrl(baseUrl: string, keyword: string): string {
+  const useProxyApi = Boolean(process.env.COMIC_API_BASE_URL && !process.env.SANKA_API_BASE_URL);
+  if (useProxyApi) {
+    const url = new URL(`${baseUrl}/comic/search`);
+    url.searchParams.set("q", keyword);
+    url.searchParams.set("_", String(Date.now()));
+    return url.toString();
+  }
+
+  return `${baseUrl}/comic/bacakomik/search/${encodeURIComponent(keyword)}?_=${Date.now()}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -43,26 +55,28 @@ export async function GET(request: NextRequest) {
       "https://www.sankavollerei.web.id"
     ).replace(/\/+$/, "");
 
-    const response = await fetch(
-      `${baseUrl}/comic/bacakomik/search/${encodeURIComponent(keyword)}?_=${Date.now()}`,
-      {
-        cache: "no-store",
-        headers: {
-          Accept: "application/json",
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache",
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        },
+    const response = await fetch(getSearchUrl(baseUrl, keyword), {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+        "User-Agent": process.env.COMIC_API_BASE_URL
+          ? "manga-frontend/1.0"
+          : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
       },
-    );
+    });
 
     if (!response.ok) {
       return NextResponse.json({ results: [], manga: [] });
     }
 
     const payload = await response.json();
-    const komikList: ApiComic[] = Array.isArray(payload?.komikList) ? payload.komikList : [];
+    const komikList: ApiComic[] = Array.isArray(payload?.komikList)
+      ? payload.komikList
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : [];
 
     const seen = new Set<string>();
     const results = komikList
