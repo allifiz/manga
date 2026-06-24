@@ -37,6 +37,24 @@ function safeParse<T>(value: string | null, fallback: T): T {
   }
 }
 
+function slugFromUrl(value: string) {
+  const clean = value.trim();
+  const legacyMatch = clean.match(/\/komik\/([^/]+)\/([^/?#]+)/);
+  if (legacyMatch?.[1] && legacyMatch?.[2]) {
+    return { mangaSlug: legacyMatch[1], chapterSlug: legacyMatch[2] };
+  }
+  const chapterMatch = clean.match(/([^/]+-chapter-[^/?#]+)/i);
+  const chapterSlug = chapterMatch?.[1] || clean.split("/").filter(Boolean).pop() || clean;
+  const mangaSlug = chapterSlug.replace(/-chapter-.+$/i, "");
+  return { mangaSlug, chapterSlug };
+}
+
+function titleFromSlug(value: string) {
+  return value
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function getBookmarks(): MangaBookmarkItem[] {
   if (!canUseStorage()) return [];
   return safeParse<MangaBookmarkItem[]>(localStorage.getItem(BOOKMARK_KEY), []);
@@ -47,11 +65,38 @@ export function saveBookmarks(items: MangaBookmarkItem[]) {
   localStorage.setItem(BOOKMARK_KEY, JSON.stringify(items));
 }
 
+export function getLegacyReadMap(): Record<string, string[]> {
+  if (!canUseStorage()) return {};
+  return safeParse<Record<string, string[]>>(localStorage.getItem(LEGACY_READ_KEY), {});
+}
+
+function getLegacyHistory(): ReadingHistoryItem[] {
+  const map = getLegacyReadMap();
+  return Object.entries(map)
+    .flatMap(([mangaSlug, urls]) => {
+      if (!Array.isArray(urls) || urls.length === 0) return [];
+      const chapterUrl = urls[urls.length - 1];
+      const parsed = slugFromUrl(chapterUrl);
+      const cleanMangaSlug = parsed.mangaSlug || mangaSlug;
+      return [{
+        mangaSlug: cleanMangaSlug,
+        mangaTitle: titleFromSlug(cleanMangaSlug),
+        chapterSlug: parsed.chapterSlug,
+        chapterTitle: titleFromSlug(parsed.chapterSlug),
+        chapterUrl,
+        updatedAt: new Date().toISOString(),
+      } satisfies ReadingHistoryItem];
+    });
+}
+
 export function getReadingHistory(): ReadingHistoryItem[] {
   if (!canUseStorage()) return [];
-  return safeParse<ReadingHistoryItem[]>(localStorage.getItem(HISTORY_KEY), []).sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
+  const stored = safeParse<ReadingHistoryItem[]>(localStorage.getItem(HISTORY_KEY), []);
+  const merged = [...stored];
+  for (const legacy of getLegacyHistory()) {
+    if (!merged.some((item) => item.mangaSlug === legacy.mangaSlug)) merged.push(legacy);
+  }
+  return merged.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 export function saveReadingHistory(items: ReadingHistoryItem[]) {
@@ -68,11 +113,7 @@ export function upsertReadingHistory(item: ReadingHistoryItem) {
 export function clearReadingHistory() {
   if (!canUseStorage()) return;
   localStorage.removeItem(HISTORY_KEY);
-}
-
-export function getLegacyReadMap(): Record<string, string[]> {
-  if (!canUseStorage()) return {};
-  return safeParse<Record<string, string[]>>(localStorage.getItem(LEGACY_READ_KEY), {});
+  localStorage.removeItem(LEGACY_READ_KEY);
 }
 
 export function getLastLegacyRead(mangaSlug: string): string | null {
