@@ -100,6 +100,22 @@ export default function LibraryPage() {
     saveBookmarks(updated);
   };
 
+  const clearUpdateBadge = (id: string) => {
+    const updated = bookmarks.map((item) => {
+      if (item.id !== id || !item.unreadUpdate) return item;
+
+      return {
+        ...item,
+        unreadUpdate: false,
+        lastKnownChapterSlug: item.latestChapterSlug || item.lastKnownChapterSlug,
+        lastRead: new Date().toISOString(),
+      };
+    });
+
+    setBookmarks(updated);
+    saveBookmarks(updated);
+  };
+
   const stats = useMemo(
     () => [
       { label: "Tersimpan", value: bookmarks.length },
@@ -145,11 +161,12 @@ export default function LibraryPage() {
           bookmarks.length > 0 ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6 animate-fade-in">
               {bookmarks.map((bm) => (
-                <div key={bm.id} className="relative group">
+                <div key={bm.id} className="relative group" onClick={() => clearUpdateBadge(bm.id)}>
                   <MangaCard id={bm.id} title={bm.title} cover={bm.cover} type={bm.type} variant="vertical" hasUnreadUpdate={bm.unreadUpdate} />
                   <button
                     onClick={(e) => {
                       e.preventDefault();
+                      e.stopPropagation();
                       removeBookmark(bm.id);
                     }}
                     className="absolute top-2 right-2 w-8 h-8 bg-accent-red text-white rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg shadow-accent-red/40 translate-y-2 group-hover:translate-y-0"
