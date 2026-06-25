@@ -5,9 +5,70 @@ import Link from "next/link";
 import MangaCard from "@/components/MangaCard";
 import { getBookmarks, getReadingHistory, prettyDate, saveBookmarks, type MangaBookmarkItem, type ReadingHistoryItem } from "@/lib/readingStorage";
 
+type DetailChapter = {
+  number?: string;
+  title?: string;
+  chapter?: string;
+  url?: string;
+};
+
+type MangaDetailResponse = {
+  chapters?: DetailChapter[];
+};
+
 function readHref(item: ReadingHistoryItem) {
   const target = item.nextChapterSlug ? `/komik/${item.mangaSlug}/${item.nextChapterSlug}` : item.chapterUrl;
   return `/read?u=${encodeURIComponent(btoa(target))}`;
+}
+
+function chapterSlugFromUrl(value?: string) {
+  if (!value) return "";
+  const clean = value.split("?")[0].replace(/\/$/, "");
+  return clean.split("/").filter(Boolean).pop() || "";
+}
+
+function sortBookmarksByUpdate(items: MangaBookmarkItem[]) {
+  return [...items].sort((a, b) => {
+    if (a.unreadUpdate && !b.unreadUpdate) return -1;
+    if (!a.unreadUpdate && b.unreadUpdate) return 1;
+
+    const aTime = new Date(a.updatedAt || a.savedAt).getTime();
+    const bTime = new Date(b.updatedAt || b.savedAt).getTime();
+    return bTime - aTime;
+  });
+}
+
+async function checkBookmarkUpdates(items: MangaBookmarkItem[]) {
+  if (items.length === 0) return items;
+
+  const results = await Promise.allSettled(
+    items.map(async (item) => {
+      const res = await fetch(`/api/manga/${item.id}`);
+      if (!res.ok) return item;
+
+      const detail = (await res.json()) as MangaDetailResponse;
+      const latest = detail.chapters?.[0];
+      const latestChapter = latest?.number || latest?.chapter || latest?.title || "";
+      const latestChapterSlug = chapterSlugFromUrl(latest?.url) || latestChapter;
+      const previousChapterSlug = item.lastKnownChapterSlug || item.latestChapterSlug;
+      const hasUpdate = Boolean(previousChapterSlug && latestChapterSlug && previousChapterSlug !== latestChapterSlug);
+      const now = new Date().toISOString();
+
+      return {
+        ...item,
+        latestChapter: latestChapter || item.latestChapter,
+        latestChapterSlug: latestChapterSlug || item.latestChapterSlug,
+        lastKnownChapterSlug: previousChapterSlug || latestChapterSlug || item.lastKnownChapterSlug,
+        unreadUpdate: hasUpdate ? true : item.unreadUpdate,
+        updatedAt: hasUpdate ? now : item.updatedAt,
+        updateCheckedAt: now,
+      } satisfies MangaBookmarkItem;
+    })
+  );
+
+  return sortBookmarksByUpdate(
+    results.map((result, index) => (result.status === "fulfilled" ? result.value : items[index]))
+  );
 }
 
 export default function LibraryPage() {
@@ -16,8 +77,21 @@ export default function LibraryPage() {
   const [tab, setTab] = useState<"bookmarks" | "history">("bookmarks");
 
   useEffect(() => {
-    setBookmarks(getBookmarks());
+    let ignore = false;
+    const storedBookmarks = sortBookmarksByUpdate(getBookmarks());
+
+    setBookmarks(storedBookmarks);
     setHistory(getReadingHistory());
+
+    checkBookmarkUpdates(storedBookmarks).then((updated) => {
+      if (ignore) return;
+      setBookmarks(updated);
+      saveBookmarks(updated);
+    });
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const removeBookmark = (id: string) => {
@@ -29,10 +103,10 @@ export default function LibraryPage() {
   const stats = useMemo(
     () => [
       { label: "Tersimpan", value: bookmarks.length },
-      { label: "Riwayat", value: history.length },
+      { label: "Update", value: bookmarks.filter((item) => item.unreadUpdate).length },
       { label: "Terakhir", value: history[0] ? prettyDate(history[0].updatedAt) : "Belum ada" },
     ],
-    [bookmarks.length, history]
+    [bookmarks, history]
   );
 
   return (
@@ -41,7 +115,7 @@ export default function LibraryPage() {
         <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(168,85,247,0.22),transparent_40%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-5 mb-7 shadow-[0_24px_80px_-45px_rgba(168,85,247,0.8)]">
           <p className="text-primary text-[10px] font-black uppercase tracking-[0.24em] mb-2">Personal shelf</p>
           <h1 className="text-white font-black text-3xl tracking-tight mb-3">Library</h1>
-          <p className="text-muted text-sm max-w-xl leading-relaxed">Tempat buat judul yang kamu simpan dan chapter yang terakhir kamu baca. Semua tersimpan lokal di browser kamu.</p>
+          <p className="text-muted text-sm max-w-xl leading-relaxed">Tempat buat judul yang kamu simpan dan chapter yang terakhir kamu baca. Manga yang punya update baru akan naik ke atas dan ditandai badge U.</p>
           <div className="grid grid-cols-3 gap-2 mt-5">
             {stats.map((item) => (
               <div key={item.label} className="rounded-2xl bg-black/20 border border-white/10 p-3">
@@ -72,7 +146,7 @@ export default function LibraryPage() {
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6 animate-fade-in">
               {bookmarks.map((bm) => (
                 <div key={bm.id} className="relative group">
-                  <MangaCard id={bm.id} title={bm.title} cover={bm.cover} type={bm.type} variant="vertical" />
+                  <MangaCard id={bm.id} title={bm.title} cover={bm.cover} type={bm.type} variant="vertical" hasUnreadUpdate={bm.unreadUpdate} />
                   <button
                     onClick={(e) => {
                       e.preventDefault();
