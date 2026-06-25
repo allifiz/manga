@@ -10,6 +10,7 @@ interface MangaCardProps {
   chapters?: { number: string; time: string; url: string }[];
   rating?: string;
   isNew?: boolean;
+  hasUnreadUpdate?: boolean;
   type?: string;
   variant?: "horizontal" | "vertical" | "featured";
 }
@@ -65,6 +66,7 @@ export default function MangaCard({
   chapters = [],
   rating,
   isNew,
+  hasUnreadUpdate,
   type,
   variant = "horizontal",
 }: MangaCardProps) {
@@ -99,7 +101,11 @@ export default function MangaCard({
                 {typeLabel(type)}
               </span>
             )}
-            {isNew && (
+            {hasUnreadUpdate ? (
+              <span className="px-3 py-1.5 bg-accent-red text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-[0_8px_20px_rgba(239,68,68,0.3)]">
+                U
+              </span>
+            ) : isNew && (
               <span className="px-3 py-1.5 bg-accent-red text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-[0_8px_20px_rgba(239,68,68,0.3)]">
                 Baru
               </span>
@@ -147,7 +153,9 @@ export default function MangaCard({
           <div className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/5 to-transparent opacity-80" />
 
           <div className="absolute top-2 left-2 right-2 flex items-start justify-between gap-2">
-            {isNew ? (
+            {hasUnreadUpdate ? (
+              <span className="bg-accent-red text-white text-[9px] font-black px-2 py-1 rounded-full shadow-lg">U</span>
+            ) : isNew ? (
               <span className="bg-accent-red text-white text-[9px] font-black px-2 py-1 rounded-full shadow-lg">UP</span>
             ) : (
               <span />
@@ -193,7 +201,11 @@ export default function MangaCard({
               <CoverFallback compact />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
-            {isNew && (
+            {hasUnreadUpdate ? (
+              <span className="absolute top-1.5 left-1.5 bg-accent-red text-white text-[8px] font-black px-1.5 py-0.5 rounded-md shadow-lg">
+                U
+              </span>
+            ) : isNew && (
               <span className="absolute top-1.5 left-1.5 bg-accent-red text-white text-[8px] font-black px-1.5 py-0.5 rounded-md shadow-lg">
                 NEW
               </span>
