@@ -18,6 +18,12 @@ export interface MangaBookmarkItem {
   type?: string;
   savedAt: string;
   lastRead?: string;
+  latestChapter?: string;
+  latestChapterSlug?: string;
+  lastKnownChapterSlug?: string;
+  updatedAt?: string;
+  unreadUpdate?: boolean;
+  updateCheckedAt?: string;
 }
 
 const HISTORY_KEY = "manga_reading_history";
@@ -63,6 +69,24 @@ export function getBookmarks(): MangaBookmarkItem[] {
 export function saveBookmarks(items: MangaBookmarkItem[]) {
   if (!canUseStorage()) return;
   localStorage.setItem(BOOKMARK_KEY, JSON.stringify(items));
+}
+
+export function markBookmarkUpdateAsRead(mangaSlug: string, chapterSlug?: string) {
+  if (!canUseStorage()) return;
+
+  const bookmarks = getBookmarks();
+  const updated = bookmarks.map((item) => {
+    if (item.id !== mangaSlug) return item;
+
+    return {
+      ...item,
+      unreadUpdate: false,
+      lastKnownChapterSlug: chapterSlug || item.latestChapterSlug || item.lastKnownChapterSlug,
+      lastRead: new Date().toISOString(),
+    };
+  });
+
+  saveBookmarks(updated);
 }
 
 export function getLegacyReadMap(): Record<string, string[]> {
